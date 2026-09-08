@@ -205,15 +205,34 @@
             android:textSize="18sp"
             android:textStyle="bold" />
 
+        <Button
+            android:id="@+id/btnScanQrPairing"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="10dp"
+            android:backgroundTint="#6366F1"
+            android:text="📷 Escanear Código QR de Vinculación"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="O ingresa manualmente los datos del servidor:"
+            android:textColor="#64748B"
+            android:textSize="12sp" />
+
         <EditText
             android:id="@+id/inputServerUrl"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="6dp"
             android:background="#1E293B"
-            android:hint="URL del Servidor (ej: http://192.168.1.15:3000)"
+            android:hint="URL del Servidor (ej: http://100.74.204.90:3000)"
             android:padding="12dp"
-            android:text="http://10.0.2.2:3000"
+            android:text="http://100.74.204.90:3000"
             android:textColor="#FFFFFF"
             android:textColorHint="#64748B"
             android:textSize="14sp" />
@@ -236,12 +255,28 @@
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:layout_marginTop="16dp"
-            android:layout_marginBottom="30dp"
             android:backgroundTint="#10B981"
             android:text="✓ Iniciar Monitoreo y Protección"
             android:textColor="#FFFFFF"
             android:textSize="15sp"
             android:textStyle="bold" />
+
+        <!-- Administration / Uninstallation Protection -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="16dp"
+            android:background="#1E293B" />
+
+        <Button
+            android:id="@+id/btnUninstallApp"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginBottom="30dp"
+            android:backgroundTint="#7F1D1D"
+            android:text="🗑️ Desinstalar Aplicación (Requiere PIN)"
+            android:textColor="#FCA5A5"
+            android:textSize="13sp" />
 
     </LinearLayout>
 </ScrollView>

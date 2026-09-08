@@ -9,9 +9,17 @@
   <!-- Google Fonts: Outfit & Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  
   <link rel="stylesheet" href="style.css">
+  
+  <!-- Leaflet Maps CSS & JS for Live GPS Tracking -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Client-side QR Code Generator for Fast Pairing -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
+  <!-- Google Identity Services for Administrator Login -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <!-- Ambient background glow effects -->
@@ -35,24 +43,38 @@
         </div>
       </div>
 
-      <!-- Device Switcher & Status -->
-      <div class="device-status-badge" id="deviceStatusBadge">
-        <div class="avatar-icon">👦</div>
-        <div class="device-meta">
+      <!-- Multi-Device Switcher & Management -->
+      <div class="device-status-badge" id="deviceStatusBadge" style="display: flex; align-items: center; gap: 10px;">
+        <select id="deviceSelectorDropdown" class="device-select-custom" title="Selecciona el dispositivo que deseas supervisar">
+          <option value="">📱 Sin dispositivo</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" id="btnOpenAddDeviceModal" style="padding: 6px 10px; font-size: 0.8rem;" title="Registrar un nuevo teléfono o tablet">
+          ➕ Dispositivo
+        </button>
+        <button class="btn btn-secondary btn-sm" id="btnOpenPairingQrModal" style="padding: 6px 10px; font-size: 0.8rem; background: rgba(99, 102, 241, 0.18); border-color: rgba(99, 102, 241, 0.4); color: #a5b4fc;" title="Ver código QR para vincular el teléfono">
+          🔗 Vincular QR
+        </button>
+        <div class="device-meta" style="margin-left: 4px;">
           <div class="device-name-row">
-            <span class="device-label" id="currentDeviceName">Teléfono de Mateo</span>
-            <span class="status-indicator online" id="onlineIndicator">
-              <span class="status-dot"></span> <span id="onlineText">En línea</span>
+            <span class="status-indicator offline" id="onlineIndicator">
+              <span class="status-dot"></span> <span id="onlineText">Sin dispositivo</span>
             </span>
           </div>
           <div class="device-submeta">
-            <span id="batteryStatus">🔋 78%</span> • <span id="lastSeenStatus">Sincronizado hace 1m</span>
+            <span id="batteryStatus">🔋 --%</span> • <span id="lastSeenStatus">Sin dispositivo vinculado</span>
           </div>
         </div>
       </div>
 
-      <!-- Master Panic / Instant Lock Action -->
+      <!-- Header Actions -->
       <div class="header-actions">
+        <!-- SaaS Family Subscription Badge & Modal Trigger -->
+        <button class="plan-badge-btn" id="btnOpenSubscriptionModal" title="Ver plan y opciones de monetización familiar">
+          <span class="plan-badge-icon">⚡</span>
+          <span id="headerPlanName">Familiar Pro</span>
+          <span class="plan-badge-pill">Gestionar Plan</span>
+        </button>
+
         <a href="/KidsShield-v1.0.apk" download="KidsShield-v1.0.apk" class="btn btn-download-apk" id="btnDownloadApk" title="Descargar APK compilada KidsShield (v1.0.0)">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -65,12 +87,20 @@
           <span class="icon-lock" id="masterLockIcon">🔒</span>
           <span id="masterLockText">Bloquear Teléfono Ahora</span>
         </button>
+        <button class="btn btn-secondary" id="btnToggleAlertNotifications" title="Activar alertas sonoras y notificaciones en el navegador">
+          <span id="alertNotifIcon">🔔</span>
+          <span id="alertNotifText">Alertas Web</span>
+        </button>
         <button class="btn btn-secondary" id="btnOpenPinModal" title="Configurar PIN de seguridad">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
           </svg>
-          <span>PIN: <strong id="headerPinDisplay">1234</strong></span>
+          <span>PIN: <strong id="headerPinDisplay">----</strong></span>
+        </button>
+        <button class="admin-profile-btn logged-out" id="btnAdminProfile" title="Iniciar Sesión / Gestionar Cuenta Familiar">
+          <span id="adminAvatarIcon">🔐</span>
+          <span id="adminNameText">Iniciar Sesión</span>
         </button>
       </div>
     </div>
@@ -78,6 +108,22 @@
 
   <!-- Main Container -->
   <main class="main-layout">
+    <!-- Auth Callout Banner when not logged in -->
+    <div id="authBannerPrompt" class="auth-banner-prompt" style="display: flex; background: linear-gradient(90deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.15)); border: 1px solid rgba(99, 102, 241, 0.35); border-radius: 12px; padding: 12px 20px; margin-bottom: 20px; align-items: center; justify-content: space-between; gap: 16px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 1.6rem;">👨‍👩‍👧‍👦</span>
+        <div>
+          <div style="font-weight: 600; color: #fff; font-size: 0.95rem;">Inicia sesión o crea tu cuenta familiar</div>
+          <div style="font-size: 0.8rem; color: #cbd5e1;">Accede para vincular los teléfonos de tus hijos, monitorear aplicaciones y recibir alertas satelitales en vivo.</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <button class="btn btn-primary btn-sm" id="btnBannerOpenLogin" style="padding: 8px 16px; font-weight: 600; white-space: nowrap;">
+          🔐 Iniciar Sesión / Registrarse
+        </button>
+      </div>
+    </div>
+
     <!-- Top Summary Banner -->
     <section class="summary-hero" id="summaryHero">
       <div class="hero-card hero-screentime">
@@ -86,16 +132,16 @@
           <div>
             <span class="card-caption">Tiempo de Pantalla Hoy</span>
             <div class="hero-metric-val">
-              <span id="statScreenTimeVal">2h 15m</span>
+              <span id="statScreenTimeVal">0m</span>
               <span class="hero-metric-limit" id="statScreenTimeLimit">/ límite 2h 00m</span>
             </div>
           </div>
         </div>
         <div class="progress-bar-container">
-          <div class="progress-bar-fill progress-exceeded" id="screenTimeProgressBar" style="width: 100%;"></div>
+          <div class="progress-bar-fill" id="screenTimeProgressBar" style="width: 0%;"></div>
         </div>
         <div class="hero-card-footer">
-          <span class="badge badge-warning" id="limitStatusBadge">⚠️ Límite diario excedido</span>
+          <span class="badge badge-accent" id="limitStatusBadge">🟢 Sin uso hoy</span>
           <button class="btn-bonus-time" id="btnAddBonusTime">+15 min de regalo</button>
         </div>
       </div>
@@ -105,13 +151,13 @@
           <div class="hero-icon icon-app" id="activeAppIcon">📱</div>
           <div>
             <span class="card-caption">Aplicación Activa en este Momento</span>
-            <div class="hero-metric-val" id="activeAppName">TikTok</div>
+            <div class="hero-metric-val" id="activeAppName">Sin aplicación en uso</div>
           </div>
         </div>
-        <p class="hero-app-desc" id="activeAppDesc">En uso continuo hace 38 minutos</p>
+        <p class="hero-app-desc" id="activeAppDesc">Esperando actividad en el teléfono móvil</p>
         <div class="hero-card-footer">
-          <button class="btn-quick-block" id="btnQuickBlockActiveApp">⛔ Bloquear Esta App</button>
-          <span class="pill-category" id="activeAppCategory">Redes Sociales</span>
+          <button class="btn-quick-block" id="btnQuickBlockActiveApp" disabled style="opacity: 0.5; cursor: not-allowed;">⛔ Bloquear Esta App</button>
+          <span class="pill-category" id="activeAppCategory">En espera</span>
         </div>
       </div>
 
@@ -238,14 +284,32 @@
           </div>
         </div>
 
-        <!-- Interactive Child Phone Live Simulator -->
+        <!-- Interactive Child Phone Live Simulator & Screen Viewer -->
         <div class="panel-card simulator-card">
           <div class="panel-header">
             <div>
-              <h2 class="panel-title">Simulador en Vivo del Teléfono</h2>
-              <p class="panel-subtitle">Visualiza cómo ve la pantalla tu hijo en tiempo real</p>
+              <h2 class="panel-title">Visualizador de Pantalla en Vivo</h2>
+              <p class="panel-subtitle">Captura y visualiza la pantalla del teléfono en tiempo real</p>
             </div>
-            <span class="live-pulse">🔴 EN VIVO</span>
+            <div class="sim-header-actions" style="flex-wrap: wrap; gap: 6px;">
+              <button class="btn btn-sm btn-primary" id="btnCaptureScreenNow" title="Solicitar captura de pantalla al dispositivo">
+                <span id="btnCaptureScreenIcon">📸</span> <span id="btnCaptureScreenText">Capturar</span>
+              </button>
+              <button class="btn btn-sm btn-secondary" id="btnCaptureVideo5s" style="background: rgba(168, 85, 247, 0.18); border-color: rgba(168, 85, 247, 0.4); color: #c084fc;" title="Grabar y reproducir clip de video de 5 segundos">
+                <span id="btnCaptureVideoIcon">🎥</span> <span id="btnCaptureVideoText">Video (5s)</span>
+              </button>
+              <button class="btn btn-sm btn-secondary" id="btnCaptureAudio5s" style="background: rgba(16, 185, 129, 0.18); border-color: rgba(16, 185, 129, 0.4); color: #34d399;" title="Escuchar audio ambiente de 5 segundos en vivo">
+                <span id="btnCaptureAudioIcon">🎙️</span> <span id="btnCaptureAudioText">Audio (5s)</span>
+              </button>
+              <label class="auto-capture-toggle" title="Captura periódica cada 8 segundos">
+                <input type="checkbox" id="toggleAutoScreenshot">
+                <span>Auto</span>
+              </label>
+              <span class="live-pulse" id="liveCapturePulse">🔴 EN VIVO</span>
+            </div>
+          </div>
+          <div id="simScreenshotStatusText" style="font-size: 0.73rem; color: var(--text-muted); text-align: center; margin: -6px 0 10px 0;">
+            Última captura: Esperando primera captura del móvil...
           </div>
 
           <div class="phone-mockup">
@@ -255,27 +319,37 @@
             <div class="phone-screen" id="simPhoneScreen">
               <!-- Phone Status Bar -->
               <div class="sim-statusbar">
-                <span id="simClock">22:45</span>
+                <span id="simClock">--:--</span>
                 <div class="sim-icons">
                   <span>📶</span>
-                  <span>🔋 78%</span>
+                  <span id="simBatteryStatus">🔋 --%</span>
                 </div>
               </div>
 
-              <!-- Content Inside Phone -->
-              <div class="sim-screen-content" id="simNormalScreen">
-                <div class="sim-active-header">
-                  <span class="sim-app-badge" id="simAppBadge">📱 TikTok</span>
-                  <span class="sim-time-badge">65m hoy</span>
+              <!-- 5-Second Video Clip Overlay Player -->
+              <div class="sim-video-clip-overlay" id="simVideoClipOverlay" style="display: none;">
+                <div class="video-clip-header">
+                  <span id="videoClipTitleText">🎥 Reproduciendo Clip (5s)</span>
+                  <button id="btnCloseVideoClip" class="btn-close-clip" title="Cerrar reproductor de video">✕</button>
                 </div>
-                <div class="sim-fake-app-view">
-                  <div class="sim-video-placeholder">
-                    <div class="sim-play-icon">▶</div>
-                    <span>Contenido de la App</span>
-                  </div>
-                  <div class="sim-fake-actions">
-                    <div class="sim-fake-bar"></div>
-                    <div class="sim-fake-bar short"></div>
+                <img id="simVideoClipFrame" class="sim-video-clip-frame" alt="Fotograma de video" />
+                <div class="video-clip-controls">
+                  <button id="btnPlayPauseClip" class="btn-ctrl-play" title="Reproducir / Pausar">▶</button>
+                  <input type="range" id="clipTimelineSlider" min="0" max="9" value="0" class="clip-slider" title="Desplazarse por los fotogramas">
+                  <span id="clipTimeText" class="clip-time">0.0s</span>
+                </div>
+              </div>
+
+              <!-- Real Live Screenshot Image -->
+              <img id="simLiveScreenImg" class="sim-live-screen-img" alt="Pantalla en tiempo real" style="display: none;" />
+
+              <!-- Content Inside Phone (Fallback) -->
+              <div class="sim-screen-content" id="simNormalScreen">
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; padding: 24px; color: #94a3b8;">
+                  <div style="font-size: 2.5rem; margin-bottom: 8px;">📱</div>
+                  <div style="font-weight: 600; color: #f1f5f9; font-size: 0.9rem; margin-bottom: 4px;">Pantalla en Reposo</div>
+                  <div style="font-size: 0.72rem; color: #64748b; line-height: 1.4; max-width: 170px;">
+                    Pulsa "Capturar" o "Video" arriba para ver la pantalla en tiempo real
                   </div>
                 </div>
               </div>
@@ -297,12 +371,100 @@
           </div>
         </div>
 
-        <!-- Activity Feed -->
+        <!-- Live GPS Map Card -->
+        <div class="panel-card map-card">
+          <div class="panel-header" style="flex-wrap: wrap; gap: 8px;">
+            <div>
+              <h2 class="panel-title">📍 Geolocalización en Vivo (GPS)</h2>
+              <p class="panel-subtitle" id="locationSubtitle">Rastreo de ubicación satelital en tiempo real</p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span class="badge badge-accent" id="locationAccuracyBadge">Esperando GPS</span>
+              <button id="btnRefreshLocation" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 0.8rem; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); color: #60a5fa; border-radius: 8px; cursor: pointer;" title="Solicitar al dispositivo móvil su posición satelital actual">
+                <span id="btnRefreshLocationIcon">🔄</span>
+                <span id="btnRefreshLocationText">Actualizar</span>
+              </button>
+              <button id="btnToggleRouteHistory" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 0.8rem; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; border-radius: 8px; cursor: pointer;" title="Trazar línea de recorrido del día con historial GPS">
+                <span id="btnRouteHistoryIcon">🗺️</span>
+                <span id="btnRouteHistoryText">Trazar Ruta</span>
+              </button>
+              <button id="btnToggleGeofences" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 0.8rem; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); color: #fbbf24; border-radius: 8px; cursor: pointer;" title="Ver zonas seguras (Colegio, Casa) en el mapa">
+                <span>🏫 Geocercas</span>
+              </button>
+            </div>
+          </div>
+          <div id="mapLeaflet" style="height: 240px; width: 100%; border-radius: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.08); z-index: 1;"></div>
+          <div class="location-footer-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 0.84rem;">
+            <span id="locationAddressText" style="color: var(--text-main); font-weight: 500;">📍 Esperando primera coordenada GPS...</span>
+            <span id="locationLastUpdatedText" style="color: var(--text-muted);">Sin señal satelital aún</span>
+          </div>
+          <!-- Route History Panel -->
+          <div class="route-history-panel" id="routeHistoryPanel" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-weight: 600; font-size: 0.78rem; color: #93c5fd;">
+              <span>📍 Puntos de la Ruta Trazada:</span>
+              <span id="routePointsCountBadge" class="badge badge-accent">0 posiciones</span>
+            </div>
+            <div id="routeHistoryItemsList"></div>
+          </div>
+        </div>
+
+        <!-- Live Ambient Audio (Modo Micrófono en Vivo) -->
+        <div class="panel-card audio-card">
+          <div class="panel-header" style="flex-wrap: wrap; gap: 8px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="badge badge-accent" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border-color: rgba(16, 185, 129, 0.4);">⚡ Exclusivo Pro</span>
+                <h2 class="panel-title">🎙️ Micrófono Ambiental en Vivo</h2>
+              </div>
+              <p class="panel-subtitle">Escucha el sonido ambiente del entorno del menor en directo</p>
+            </div>
+            <button id="btnTriggerAudioRecord" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+              <span id="btnAudioActionIcon">🎙️</span>
+              <span id="btnAudioActionText">Escuchar en Directo (5s)</span>
+            </button>
+          </div>
+
+          <!-- Audio Waveform Visualizer -->
+          <div class="audio-visualizer-container" id="audioVisualizerBox">
+            <div class="soundwave-bar-wrapper" id="soundwaveBars">
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+              <span class="soundwave-bar"></span>
+            </div>
+            <div class="audio-status-info" id="audioStatusText">
+              Micrófono listo. Pulsa el botón para solicitar 5 segundos de audio ambiente al móvil.
+            </div>
+            <audio id="audioAmbientPlayer" controls style="width: 100%; max-width: 420px; display: none; margin-top: 12px;"></audio>
+          </div>
+
+          <div class="audio-footer-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 0.8rem; color: var(--text-muted);">
+            <span id="audioLastReceivedTime">Sin audios recientes</span>
+            <span style="display: flex; align-items: center; gap: 6px; color: #34d399; font-weight: 500;">
+              <span class="status-indicator-dot online" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span>
+              Audio AAC de Alta Fidelidad
+            </span>
+          </div>
+        </div>
+
+        <!-- Activity Feed (Real-time timeline) -->
         <div class="panel-card">
           <div class="panel-header">
             <div>
-              <h2 class="panel-title">Registro de Seguridad</h2>
-              <p class="panel-subtitle">Eventos e intentos de acceso recientes</p>
+              <h2 class="panel-title">Línea de Tiempo y Registro en Vivo</h2>
+              <p class="panel-subtitle">Aperturas de apps, bloqueos y alertas en tiempo real</p>
             </div>
           </div>
           <div class="activity-feed" id="activityFeedContainer">
@@ -392,6 +554,328 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="btnCancelPinModal">Cancelar</button>
         <button class="btn btn-primary" id="btnSavePin">Guardar Nuevo PIN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Vincular Dispositivo con Código QR -->
+  <div class="modal-backdrop" id="modalPairingQr">
+    <div class="modal-card" style="max-width: 480px; text-align: center;">
+      <div class="modal-header">
+        <h3 class="modal-title">🔗 Vincular Dispositivo con QR</h3>
+        <button class="modal-close" id="btnClosePairingQrModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="qr-code-box" style="display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 10px 0 16px 0;">
+          <div style="background: #ffffff; padding: 12px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); border: 2px solid rgba(255,255,255,0.15); display: inline-flex; justify-content: center; align-items: center;">
+            <img id="qrCodeImg" src="/api/devices/KID-PHONE-01/qr.png" alt="Código QR de Vinculación" style="width: 220px; height: 220px; display: block; border-radius: 6px; object-fit: contain;" />
+            <canvas id="qrCodeCanvas" class="qr-canvas" style="display: none;"></canvas>
+          </div>
+          <span style="color: #94a3b8; font-size: 0.78rem; margin-top: 10px;">Apunta la cámara de la app KidsShield a este código</span>
+        </div>
+        <div style="background: rgba(255,255,255,0.04); border-radius: 10px; padding: 12px; font-size: 0.82rem; text-align: left; border: 1px solid rgba(255,255,255,0.08);">
+          <div style="margin-bottom: 6px; display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Dispositivo:</span>
+            <strong id="qrModalDeviceName" style="color: #60a5fa;">Teléfono Principal</strong>
+          </div>
+          <div style="margin-bottom: 6px; display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">ID de Vinculación:</span>
+            <code id="qrModalDeviceId" style="background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; color: #34d399;">KID-PHONE-01</code>
+          </div>
+          <div style="margin-bottom: 6px; display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Servidor / IP:</span>
+            <code id="qrModalServerUrl" style="background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; color: #facc15;">http://100.74.204.90:3000</code>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">PIN de Administración:</span>
+            <strong id="qrModalDevicePin" style="color: #f87171;">1234</strong>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: center; gap: 10px;">
+        <button class="btn btn-secondary" id="btnCopyPairingPayload">📋 Copiar Datos</button>
+        <button class="btn btn-primary" id="btnDonePairingQr">Listo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Agregar Nuevo Dispositivo -->
+  <div class="modal-backdrop" id="modalAddDevice">
+    <div class="modal-card" style="max-width: 460px;">
+      <div class="modal-header">
+        <h3 class="modal-title">➕ Agregar Nuevo Dispositivo</h3>
+        <button class="modal-close" id="btnCloseAddDeviceModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-note">Registra un nuevo teléfono o tablet para comenzar su supervisión individual con KidsShield.</p>
+        <div class="pin-form-group" style="margin-bottom: 12px;">
+          <label for="inputNewDeviceId">ID Único del Dispositivo (ej: KID-HIJO-02):</label>
+          <input type="text" id="inputNewDeviceId" placeholder="KID-PHONE-02" style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff;">
+        </div>
+        <div class="pin-form-group" style="margin-bottom: 12px;">
+          <label for="inputNewDeviceName">Nombre / Propietario (ej: Teléfono de Sofía):</label>
+          <input type="text" id="inputNewDeviceName" placeholder="Teléfono de Sofía" style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff;">
+        </div>
+        <div class="pin-form-group" style="margin-bottom: 12px;">
+          <label for="inputNewDeviceModel">Modelo / Fabricante (ej: Xiaomi Redmi Note 12):</label>
+          <input type="text" id="inputNewDeviceModel" placeholder="Xiaomi Redmi Note 12" style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff;">
+        </div>
+        <div class="pin-form-group">
+          <label for="inputNewDevicePin">PIN de Desbloqueo y Administración (4 dígitos):</label>
+          <input type="password" id="inputNewDevicePin" maxlength="4" placeholder="1234" value="1234" style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff;">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btnCancelAddDevice">Cancelar</button>
+        <button class="btn btn-primary" id="btnSubmitAddDevice">Crear y Generar QR</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Administrador de Usuarios y Login Familiar (Multi-Tenant) -->
+  <div class="modal-backdrop" id="modalAdminLogin">
+    <div class="modal-card" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3 class="modal-title">👨‍👩‍👧‍👦 Cuenta de Familia y Administración</h3>
+        <button class="modal-close" id="btnCloseAdminModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="adminLoggedOutSection">
+          <!-- Auth Tabs: Login vs Register -->
+          <div class="auth-tabs" style="display: flex; gap: 8px; margin-bottom: 16px; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 10px;">
+            <button class="auth-tab-btn active" id="tabBtnLogin" style="flex: 1; padding: 8px; border: none; background: var(--primary); color: #fff; border-radius: 8px; font-weight: 600; cursor: pointer; transition: var(--transition);">Iniciar Sesión</button>
+            <button class="auth-tab-btn" id="tabBtnRegister" style="flex: 1; padding: 8px; border: none; background: transparent; color: var(--text-secondary); border-radius: 8px; font-weight: 600; cursor: pointer; transition: var(--transition);">Registrar Familia</button>
+          </div>
+
+          <!-- Panel Informativo y de Configuración de Google OAuth -->
+          <div id="googleSetupPanel" style="display: none; background: rgba(66, 133, 244, 0.08); border: 1px solid rgba(66, 133, 244, 0.35); border-radius: 10px; padding: 14px; margin-bottom: 14px; font-size: 0.82rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <span style="font-weight: 700; color: #93c5fd; display: flex; align-items: center; gap: 6px;">
+                <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+                Configuración de Google Sign-In Real
+              </span>
+              <button type="button" id="btnCloseGoogleSetup" style="background: transparent; border: none; color: #94a3b8; cursor: pointer; font-size: 1.2rem; line-height: 1;" title="Cerrar">&times;</button>
+            </div>
+            <p style="color: #cbd5e1; margin-bottom: 10px; line-height: 1.4; font-size: 0.78rem;">
+              Para que Google abra la ventana oficial donde eliges tu cuenta real de Google (<strong>@gmail.com</strong>), se requiere el <strong>Client ID de Google Cloud</strong>.
+            </p>
+            <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+              <input type="text" id="inputGoogleClientIdModal" placeholder="Ej: 123456789-abc.apps.googleusercontent.com" style="flex: 1; padding: 8px 10px; font-size: 0.78rem; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff;">
+              <button class="btn btn-primary btn-sm" id="btnSaveGoogleClientIdModal" style="padding: 6px 12px; font-size: 0.78rem; white-space: nowrap;">Guardar ID</button>
+            </div>
+            <div style="font-size: 0.74rem; color: #94a3b8; line-height: 1.3;">
+              👉 <em>¿No tienes Client ID aún? Puedes registrarte de inmediato abajo con tu correo real y contraseña sin necesidad de Google Cloud.</em>
+            </div>
+          </div>
+
+          <!-- Form: Iniciar Sesión con Email & Password -->
+          <div id="formLoginTab">
+            <div style="margin-bottom: 12px;">
+              <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Correo Electrónico:</label>
+              <input type="email" id="loginEmailInput" placeholder="tu.correo@ejemplo.com" style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff;">
+            </div>
+            <div style="margin-bottom: 14px;">
+              <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Contraseña:</label>
+              <input type="password" id="loginPasswordInput" placeholder="••••••••" style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff;">
+            </div>
+            <button class="btn btn-primary" id="btnSubmitEmailLogin" style="width: 100%; padding: 11px; margin-bottom: 14px;">Ingresar a mi Familia</button>
+
+            <!-- Separador -->
+            <div style="display: flex; align-items: center; margin: 12px 0; color: var(--text-muted); font-size: 0.75rem;">
+              <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.1);"></div>
+              <span style="padding: 0 10px;">O ingresa rápidamente con</span>
+              <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.1);"></div>
+            </div>
+
+            <!-- Google Sign-In Button -->
+            <button class="btn btn-secondary" id="btnLoginWithGoogle" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(66, 133, 244, 0.12); border-color: rgba(66, 133, 244, 0.35); color: #93c5fd; padding: 10px; font-size: 0.86rem; font-weight: 600;" title="Iniciar sesión con Google">
+              <svg width="18" height="18" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <span>Iniciar Sesión con Google</span>
+            </button>
+          </div>
+
+          <!-- Form: Registro de Familia Nueva -->
+          <div id="formRegisterTab" style="display: none;">
+            <!-- Google Register Button -->
+            <button class="btn btn-secondary" id="btnRegisterWithGoogle" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(66, 133, 244, 0.12); border-color: rgba(66, 133, 244, 0.35); color: #93c5fd; padding: 10px; font-size: 0.86rem; font-weight: 600; margin-bottom: 12px;" title="Registrar familia con Google">
+              <svg width="18" height="18" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <span>Registrar Familia con Google</span>
+            </button>
+
+            <!-- Separador -->
+            <div style="display: flex; align-items: center; margin: 12px 0; color: var(--text-muted); font-size: 0.75rem;">
+              <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.1);"></div>
+              <span style="padding: 0 10px;">O regístrate con tu correo</span>
+              <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.1);"></div>
+            </div>
+
+            <div style="margin-bottom: 10px;">
+              <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Tu Nombre (Padre / Madre):</label>
+              <input type="text" id="regNameInput" placeholder="Ej: Sebastián Briones" style="width: 100%; padding: 9px 12px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff;">
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Correo Electrónico:</label>
+              <input type="email" id="regEmailInput" placeholder="padre@ejemplo.com" style="width: 100%; padding: 9px 12px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff;">
+            </div>
+            <div style="margin-bottom: 14px;">
+              <label style="display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">Contraseña Segura:</label>
+              <input type="password" id="regPasswordInput" placeholder="Mínimo 8 caracteres" minlength="8" style="width: 100%; padding: 9px 12px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff;">
+            </div>
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 10px; margin-bottom: 14px; font-size: 0.78rem; color: #6ee7b7;">
+              🎁 <strong>¡Prueba Gratuita de 14 Días del Plan Pro!</strong><br>Accede a todas las funciones premium (video de 5s, captura en vivo, multi-dispositivo) sin tarjeta de crédito.
+            </div>
+            <button class="btn btn-primary" id="btnSubmitRegister" style="width: 100%; padding: 11px;">Crear Familia y Comenzar</button>
+          </div>
+        </div>
+
+        <div id="adminLoggedInSection" style="display: none;">
+          <div style="display: flex; align-items: center; gap: 14px; padding: 14px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 12px; margin-bottom: 16px;">
+            <img id="adminProfileImg" src="" alt="Avatar" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid #818cf8; display: none;">
+            <div id="adminProfileAvatarFallback" style="width: 48px; height: 48px; border-radius: 50%; background: #6366f1; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; color: #fff;">👨‍💼</div>
+            <div style="flex: 1;">
+              <h4 id="adminProfileName" style="margin: 0; color: #fff; font-size: 1rem;">Sebastián Briones</h4>
+              <p id="adminProfileEmail" style="margin: 2px 0 0 0; color: #a5b4fc; font-size: 0.82rem;">admin.padre@gmail.com</p>
+              <div style="margin-top: 4px; display: flex; gap: 6px; align-items: center;">
+                <span id="adminProfileRoleBadge" class="badge badge-accent" style="font-size: 0.7rem;">Titular de Familia</span>
+                <span id="adminFamilyIdBadge" style="font-size: 0.7rem; color: var(--text-muted); background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">FAM-DEFAULT-01</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 12px; margin-bottom: 14px; font-size: 0.82rem;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="color: var(--text-muted);">Base de Datos:</span>
+              <strong style="color: #38bdf8;">Turso Cloud (AWS US-East) ☁️</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="color: var(--text-muted);">Plan de Suscripción:</span>
+              <strong id="adminProfilePlanText" style="color: #facc15;">Familiar Pro ⚡</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted);">Límite de Dispositivos:</span>
+              <strong id="adminProfileDeviceLimitText" style="color: #34d399;">Hasta 5 dispositivos</strong>
+            </div>
+          </div>
+
+          <div class="admin-actions-list" style="display: flex; flex-direction: column; gap: 8px;">
+            <button class="btn btn-outline" id="btnAdminOpenSubscriptionModal" style="justify-content: flex-start; color: #facc15; border-color: rgba(250, 204, 21, 0.3);">
+              ⭐ Gestionar Suscripción y Planes Familiares
+            </button>
+            <button class="btn btn-secondary" id="btnAdminLogout" style="color: #f87171; border-color: rgba(239, 68, 68, 0.3);">
+              Cerrar Sesión
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btnCloseAdminModalFooter">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Planes y Monetización Familiar (SaaS) -->
+  <div class="modal-backdrop" id="modalSubscription">
+    <div class="modal-card" style="max-width: 860px; width: 95%;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">⭐ Planes y Suscripción Familiar KidsShield</h3>
+          <p class="modal-note" style="margin-top: 4px;">Elige el plan ideal para proteger, acompañar y cuidar a tus hijos en el mundo digital.</p>
+        </div>
+        <button class="modal-close" id="btnCloseSubscriptionModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Plans Grid -->
+        <div class="plans-grid">
+          <!-- Plan 1: Gratuito -->
+          <div class="plan-card" id="cardPlanFree">
+            <div class="plan-header">
+              <span class="plan-tag">Básico</span>
+              <h4 class="plan-name">Plan Gratuito</h4>
+              <div class="plan-price">
+                <span class="plan-currency">$</span>0
+                <span class="plan-period">/ mes</span>
+              </div>
+              <p class="plan-description">Para familias con un único menor que necesitan control básico.</p>
+            </div>
+            <ul class="plan-features">
+              <li><span class="check-icon">✓</span> <strong>1 Dispositivo</strong> infantil</li>
+              <li><span class="check-icon">✓</span> Monitoreo de apps en uso</li>
+              <li><span class="check-icon">✓</span> Límite de tiempo global</li>
+              <li><span class="check-icon">✓</span> Historial GPS (últimas 6 horas)</li>
+              <li><span class="check-icon">✓</span> Captura de pantalla (3 al día)</li>
+              <li class="feature-disabled"><span class="cross-icon">✕</span> Clips de Video en vivo</li>
+              <li class="feature-disabled"><span class="cross-icon">✕</span> Geocercas automáticas</li>
+            </ul>
+            <button class="btn btn-outline btn-plan-select" data-plan="free" id="btnSelectPlanFree">Activar Plan Gratuito</button>
+          </div>
+
+          <!-- Plan 2: Familiar Pro (Recomendado) -->
+          <div class="plan-card plan-card-featured" id="cardPlanPro">
+            <div class="plan-badge-popular">MÁS ELEGIDO POR PADRES ⭐</div>
+            <div class="plan-header">
+              <span class="plan-tag tag-pro">Protección Total</span>
+              <h4 class="plan-name">Familiar Pro ⚡</h4>
+              <div class="plan-price">
+                <span class="plan-currency">$</span>4.990 <small style="font-size: 0.9rem; color: #a5b4fc;">CLP</small>
+                <span class="plan-period">/ mes</span>
+              </div>
+              <p class="plan-description" style="color: #c7d2fe;">Equivalente a $4.99 USD / mes. Prueba de 14 días incluida.</p>
+            </div>
+            <ul class="plan-features">
+              <li><span class="check-icon">✓</span> <strong>Hasta 5 Dispositivos</strong> (móviles y tablets)</li>
+              <li><span class="check-icon">✓</span> <strong>Captura de Pantalla Ilimitada</strong> en vivo</li>
+              <li><span class="check-icon">✓</span> <strong>Clips de Video de 5s</strong> en tiempo real</li>
+              <li><span class="check-icon">✓</span> <strong>Historial GPS de 30 días</strong> con trazado continuo</li>
+              <li><span class="check-icon">✓</span> Límites individuales por app y Modo Noche</li>
+              <li><span class="check-icon">✓</span> <strong>Protección Anti-Desinstalación</strong> blindada con PIN</li>
+              <li class="feature-disabled"><span class="cross-icon">✕</span> Geocercas ilimitadas</li>
+            </ul>
+            <button class="btn btn-primary btn-plan-select" data-plan="pro" id="btnSelectPlanPro">Elegir Familiar Pro</button>
+          </div>
+
+          <!-- Plan 3: Familia Total VIP -->
+          <div class="plan-card" id="cardPlanFamilyTotal">
+            <div class="plan-header">
+              <span class="plan-tag tag-vip">Hogar Completo</span>
+              <h4 class="plan-name">Familia Total VIP 💎</h4>
+              <div class="plan-price">
+                <span class="plan-currency">$</span>8.990 <small style="font-size: 0.9rem; color: #fbcfe8;">CLP</small>
+                <span class="plan-period">/ mes</span>
+              </div>
+              <p class="plan-description">Equivalente a $8.99 USD / mes. Para hogares grandes y protección máxima.</p>
+            </div>
+            <ul class="plan-features">
+              <li><span class="check-icon">✓</span> <strong>Hasta 10 Dispositivos</strong> protegidos</li>
+              <li><span class="check-icon">✓</span> Todo lo incluido en Familiar Pro</li>
+              <li><span class="check-icon">✓</span> <strong>Geocercas Inteligentes ilimitadas</strong> (Colegio/Casa)</li>
+              <li><span class="check-icon">✓</span> Detección de ciberacoso y palabras clave</li>
+              <li><span class="check-icon">✓</span> <strong>Reporte Semanal en PDF</strong> al correo</li>
+              <li><span class="check-icon">✓</span> Soporte VIP por WhatsApp 24/7</li>
+            </ul>
+            <button class="btn btn-outline btn-plan-select" data-plan="family_total" id="btnSelectPlanFamilyTotal">Elegir Familia Total</button>
+          </div>
+        </div>
+
+        <div style="margin-top: 20px; padding: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 0.86rem; color: #fff; font-weight: 600;">🔒 Pagos Seguros y Cancelación en Cualquier Momento</div>
+            <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Aceptamos Webpay, Redcompra, Tarjetas de Crédito/Débito, Mercado Pago y Stripe.</div>
+          </div>
+          <span class="badge badge-accent" style="font-size: 0.75rem;">Sin contratos forzados</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btnCloseSubscriptionModalFooter">Cerrar</button>
       </div>
     </div>
   </div>

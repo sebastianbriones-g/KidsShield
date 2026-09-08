@@ -58,9 +58,9 @@ public class LockOverlayActivity extends AppCompatActivity {
         ParentalConfig config = ParentalConfig.getInstance(this);
 
         if (enteredPin.equals(config.getParentPin())) {
-            Toast.makeText(this, "Desbloqueo autorizado por padres", Toast.LENGTH_SHORT).show();
-            // Temporarily unblock master lock
+            Toast.makeText(this, "✅ Acceso concedido (10 min de configuración)", Toast.LENGTH_SHORT).show();
             config.setDeviceLocked(false);
+            config.grantAdminBypass(10);
             finish();
         } else {
             Toast.makeText(this, "PIN incorrecto. Intenta de nuevo.", Toast.LENGTH_SHORT).show();

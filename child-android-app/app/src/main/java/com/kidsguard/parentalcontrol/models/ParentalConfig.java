@@ -59,6 +59,32 @@ public class ParentalConfig {
         prefs.edit().putBoolean("is_locked", locked).apply();
     }
 
+    public boolean isProtectionActive() {
+        return prefs.getBoolean("protection_active", false);
+    }
+
+    public void setProtectionActive(boolean active) {
+        prefs.edit().putBoolean("protection_active", active).apply();
+    }
+
+    public long getAdminBypassUntil() {
+        return prefs.getLong("admin_bypass_until", 0L);
+    }
+
+    public void setAdminBypassUntil(long timestamp) {
+        prefs.edit().putLong("admin_bypass_until", timestamp).apply();
+    }
+
+    public void grantAdminBypass(int minutes) {
+        setAdminBypassUntil(System.currentTimeMillis() + (long) minutes * 60 * 1000);
+    }
+
+    public boolean isProtectionEnforced() {
+        if (!isProtectionActive()) return false;
+        if (System.currentTimeMillis() < getAdminBypassUntil()) return false;
+        return true;
+    }
+
     public String getLockReason() {
         return prefs.getString("lock_reason", "Bloqueado por tus padres");
     }
@@ -111,6 +137,24 @@ public class ParentalConfig {
         if (packageName == null) return false;
         Set<String> blocked = getBlockedApps();
         return blocked.contains(packageName);
+    }
+
+    public String getAppLimitsJson() {
+        return prefs.getString("app_limits", "{}");
+    }
+
+    public void setAppLimitsJson(String json) {
+        prefs.edit().putString("app_limits", json != null ? json : "{}").apply();
+    }
+
+    public int getAppLimitMinutes(String packageName) {
+        if (packageName == null) return 0;
+        try {
+            org.json.JSONObject obj = new org.json.JSONObject(getAppLimitsJson());
+            return obj.optInt(packageName, 0);
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     public boolean isCurrentTimeInBedtime() {

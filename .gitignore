@@ -19,5 +19,20 @@ Thumbs.db
 .DS_Store
 *.log
 
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.env
+
+# SQLite local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Build tools binaries
+build_tools/
+
 # GitHub workflows (requires workflow PAT scope)
 .github/
+

