@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">KidsShield</string>
+    <string name="accessibility_service_label">KidsShield - Bloqueador y Control</string>
+    <string name="accessibility_service_description">Permite a KidsShield detectar el inicio de aplicaciones para aplicar límites de tiempo y restricciones parentales en tiempo real.</string>
+    <string name="device_admin_label">KidsShield Administrador</string>
+    <string name="device_admin_description">Previene que la aplicación de control parental sea desinstalada o forzada a detenerse sin el PIN del tutor.</string>
+</resources>
