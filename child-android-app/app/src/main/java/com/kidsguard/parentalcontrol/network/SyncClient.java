@@ -2,6 +2,7 @@ package com.kidsguard.parentalcontrol.network;
 
 import android.content.Context;
 import android.util.Log;
+import android.widget.Toast;
 
 import com.kidsguard.parentalcontrol.models.ParentalConfig;
 import com.kidsguard.parentalcontrol.services.AppBlockerAccessibilityService;
@@ -22,6 +23,24 @@ import java.util.Set;
 public class SyncClient {
 
     private static final String TAG = "KidsShield_Sync";
+
+    public static void handleUnlinkAndRelease(final Context context) {
+        Log.i(TAG, "🔓 [LIBERACIÓN] Dispositivo desvinculado por los padres. Liberando teléfono y cancelando bloqueos...");
+        try {
+            ParentalConfig config = ParentalConfig.getInstance(context);
+            config.releaseAndUnlink();
+            com.kidsguard.parentalcontrol.ui.LockOverlayActivity.dismissIfOpen();
+
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+                @Override
+                public void run() {
+                    Toast.makeText(context, "✅ Dispositivo desvinculado por los padres. El teléfono ha quedado completamente libre.", Toast.LENGTH_LONG).show();
+                }
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "Error liberando dispositivo al desvincular", e);
+        }
+    }
 
     public interface SyncCallback {
         void onSuccess();
@@ -91,9 +110,21 @@ public class SyncClient {
 
                         JSONObject resJson = new JSONObject(response.toString());
 
+                        // Si el servidor indica que el dispositivo fue desvinculado, liberar de inmediato
+                        if (resJson.optBoolean("unlinked", false)) {
+                            handleUnlinkAndRelease(context);
+                            if (callback != null) callback.onSuccess();
+                            conn.disconnect();
+                            return;
+                        }
+
                         // Update local policies based on parent server instructions
                         if (resJson.has("isLocked")) {
-                            config.setDeviceLocked(resJson.getBoolean("isLocked"));
+                            boolean locked = resJson.getBoolean("isLocked");
+                            config.setDeviceLocked(locked);
+                            if (!locked) {
+                                com.kidsguard.parentalcontrol.ui.LockOverlayActivity.dismissIfOpen();
+                            }
                         }
                         if (resJson.has("lockReason")) {
                             config.setLockReason(resJson.getString("lockReason"));
@@ -128,7 +159,10 @@ public class SyncClient {
                             JSONArray cmds = resJson.getJSONArray("pendingCommands");
                             for (int i = 0; i < cmds.length(); i++) {
                                 String cmd = cmds.getString(i);
-                                if ("TAKE_SCREENSHOT".equalsIgnoreCase(cmd)) {
+                                if ("UNLINK_DEVICE".equalsIgnoreCase(cmd) || "UNLOCK_DEVICE".equalsIgnoreCase(cmd)) {
+                                    Log.i(TAG, "Comando recibido: " + cmd + " -> Liberando y desbloqueando teléfono");
+                                    handleUnlinkAndRelease(context);
+                                } else if ("TAKE_SCREENSHOT".equalsIgnoreCase(cmd)) {
                                     Log.i(TAG, "Comando recibido: TAKE_SCREENSHOT");
                                     AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
                                     if (a11y != null) {
@@ -156,6 +190,10 @@ public class SyncClient {
 
                         if (callback != null) callback.onSuccess();
                     } else {
+                        if (responseCode == 404) {
+                            Log.i(TAG, "Dispositivo no encontrado (404) -> Liberando teléfono");
+                            handleUnlinkAndRelease(context);
+                        }
                         if (callback != null) callback.onError("HTTP " + responseCode);
                     }
                     conn.disconnect();

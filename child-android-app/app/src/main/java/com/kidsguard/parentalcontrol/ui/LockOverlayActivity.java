@@ -16,12 +16,24 @@ import com.kidsguard.parentalcontrol.models.ParentalConfig;
 
 public class LockOverlayActivity extends AppCompatActivity {
 
+    private static java.lang.ref.WeakReference<LockOverlayActivity> currentInstance;
+
+    public static void dismissIfOpen() {
+        if (currentInstance != null) {
+            LockOverlayActivity act = currentInstance.get();
+            if (act != null && !act.isFinishing()) {
+                act.finish();
+            }
+        }
+    }
+
     private EditText inputParentPin;
     private TextView textLockMessage;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        currentInstance = new java.lang.ref.WeakReference<>(this);
         setContentView(R.layout.activity_lock_overlay);
 
         textLockMessage = findViewById(R.id.textLockMessage);
@@ -71,10 +83,17 @@ public class LockOverlayActivity extends AppCompatActivity {
     // Prevent bypassing via back button
     @Override
     public void onBackPressed() {
-        // Do not allow dismissing without parent PIN
         Intent homeIntent = new Intent(Intent.ACTION_MAIN);
         homeIntent.addCategory(Intent.CATEGORY_HOME);
         homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(homeIntent);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (currentInstance != null && currentInstance.get() == this) {
+            currentInstance = null;
+        }
     }
 }

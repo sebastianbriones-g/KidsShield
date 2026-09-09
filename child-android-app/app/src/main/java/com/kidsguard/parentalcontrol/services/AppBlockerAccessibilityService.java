@@ -103,6 +103,21 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
                         || combined.contains("permitir") || combined.contains("apps descargadas")
                         || combined.contains("servicios descargados") || combined.contains("installed services");
 
+                // Proteger contra desactivación de GPS / Ubicación
+                boolean isLocationPage = combined.contains("ubicación") || combined.contains("location") || combined.contains("gps");
+                boolean isDisablingLocation = combined.contains("desactivar") || combined.contains("turn off") || combined.contains("apagar") || combined.contains("deshabilitar");
+                if (isLocationPage && isDisablingLocation) {
+                    Log.i(TAG, "Intento de desactivar GPS detectado. Bloqueando y regresando...");
+                    performGlobalAction(GLOBAL_ACTION_BACK);
+                    SyncClient.sendEvent(this, "gps_alert", "com.android.settings", "Ajustes del Sistema", "⚠️ Intento de desactivar el GPS interceptado y bloqueado.");
+                    Intent lockIntent = new Intent(this, LockOverlayActivity.class);
+                    lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    lockIntent.putExtra("BLOCK_REASON", "El GPS debe permanecer encendido en todo momento por seguridad familiar.");
+                    lockIntent.putExtra("BLOCKED_PACKAGE", packageName);
+                    startActivity(lockIntent);
+                    return;
+                }
+
                 if (isUninstallOrWipe && mentionsOurApp && !isPermissionFlow) {
                     Log.i(TAG, "Intento de desinstalación o revocación en Ajustes detectado. Bloqueando...");
                     performGlobalAction(GLOBAL_ACTION_HOME);
@@ -133,6 +148,11 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
                 currentActivePackage = packageName;
                 Log.i(TAG, "App activa detectada: " + appName + " (" + packageName + ")");
                 SyncClient.sendEvent(this, "app_open", packageName, appName, "Abrió " + appName);
+            }
+
+            // Si la protección parental no está activa o el dispositivo está desvinculado, permitir uso libre
+            if (!config.isProtectionActive() || !config.isProtectionEnforced()) {
+                return;
             }
 
             boolean shouldBlock = false;

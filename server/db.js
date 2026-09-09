@@ -170,6 +170,18 @@ async function initDb() {
       );
     `);
 
+    // 11. Password Resets (Recovery Tokens)
+    await client.execute(`
+      CREATE TABLE IF NOT EXISTS password_resets (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        token TEXT UNIQUE NOT NULL,
+        expires_at TEXT NOT NULL,
+        used INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+    `);
+
     console.log('[Database] ✅ Tablas e índices verificados correctamente en Turso Cloud');
 
     // Inicializar familia y dispositivo por defecto si no existen para compatibilidad inmediata
@@ -277,6 +289,17 @@ async function getUserByEmail(email) {
   } catch (e) {
     console.error('[Database] Error buscando usuario por email:', e);
     return null;
+  }
+}
+
+async function linkGoogleToUser(userId, googleId, picture) {
+  try {
+    await client.execute({
+      sql: "UPDATE users SET google_id = COALESCE(google_id, ?), avatar = CASE WHEN avatar = '👨‍💼' OR avatar IS NULL THEN ? ELSE avatar END WHERE id = ?",
+      args: [googleId || null, picture || '👨‍💼', userId]
+    });
+  } catch (e) {
+    console.error('[Database] Error vinculando Google ID a usuario:', e);
   }
 }
 
@@ -694,11 +717,131 @@ async function deleteGeofence(id) {
   }
 }
 
+// ----------------- Password Reset Recovery Methods -----------------
+
+async function createPasswordReset(email) {
+  const cleanEmail = email.toLowerCase().trim();
+  const user = await getUserByEmail(cleanEmail);
+  if (!user) {
+    return null; // Correo no registrado
+  }
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const id = 'RST-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString(); // 1 hora de vigencia
+
+  try {
+    // Invalidar solicitudes anteriores pendientes para el mismo email
+    await client.execute({
+      sql: 'UPDATE password_resets SET used = 1 WHERE email = ? AND used = 0',
+      args: [cleanEmail]
+    });
+
+    // Guardar nuevo token
+    await client.execute({
+      sql: 'INSERT INTO password_resets (id, email, token, expires_at, used, created_at) VALUES (?, ?, ?, ?, 0, ?)',
+      args: [id, cleanEmail, token, expiresAt, now.toISOString()]
+    });
+
+    console.log(`[Database] 🔑 Token de recuperación creado para ${cleanEmail} (Válido hasta: ${expiresAt})`);
+    return {
+      token,
+      expiresAt,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email
+      }
+    };
+  } catch (e) {
+    console.error('[Database] Error creando token de recuperación:', e);
+    throw e;
+  }
+}
+
+async function verifyPasswordResetToken(token) {
+  if (!token || typeof token !== 'string') {
+    return { valid: false, error: 'Token no proporcionado o inválido' };
+  }
+
+  try {
+    const rs = await client.execute({
+      sql: 'SELECT * FROM password_resets WHERE token = ?',
+      args: [token.trim()]
+    });
+
+    if (rs.rows.length === 0) {
+      return { valid: false, error: 'El enlace de recuperación es inválido o inexistente.' };
+    }
+
+    const resetRecord = rs.rows[0];
+
+    if (resetRecord.used === 1) {
+      return { valid: false, error: 'Este enlace de recuperación ya fue utilizado previamente.' };
+    }
+
+    const expiresAt = new Date(resetRecord.expires_at).getTime();
+    if (expiresAt < Date.now()) {
+      return { valid: false, error: 'El enlace de recuperación ha expirado (validez de 60 minutos).' };
+    }
+
+    const user = await getUserByEmail(resetRecord.email);
+    return {
+      valid: true,
+      email: resetRecord.email,
+      user: user ? { id: user.id, name: user.name, email: user.email } : null
+    };
+  } catch (e) {
+    console.error('[Database] Error verificando token de recuperación:', e);
+    return { valid: false, error: 'Error al verificar token en la base de datos' };
+  }
+}
+
+async function resetPasswordWithToken(token, newPassword) {
+  const verification = await verifyPasswordResetToken(token);
+  if (!verification.valid) {
+    return { success: false, error: verification.error };
+  }
+
+  if (!newPassword || newPassword.length < 8) {
+    return { success: false, error: 'La nueva contraseña debe tener al menos 8 caracteres.' };
+  }
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(newPassword, salt);
+
+    // Actualizar contraseña del usuario
+    await client.execute({
+      sql: 'UPDATE users SET password_hash = ? WHERE email = ?',
+      args: [passwordHash, verification.email]
+    });
+
+    // Marcar token como consumido
+    await client.execute({
+      sql: 'UPDATE password_resets SET used = 1 WHERE token = ?',
+      args: [token.trim()]
+    });
+
+    console.log(`[Database] 🔒 Contraseña actualizada con éxito para el usuario ${verification.email}`);
+    return {
+      success: true,
+      email: verification.email,
+      user: verification.user
+    };
+  } catch (e) {
+    console.error('[Database] Error restableciendo contraseña:', e);
+    return { success: false, error: 'Error interno al actualizar la contraseña' };
+  }
+}
+
 module.exports = {
   client,
   initDb,
   registerParent,
   getUserByEmail,
+  linkGoogleToUser,
   verifyPassword,
   getFamilySubscription,
   updateSubscriptionPlan,
@@ -715,5 +858,9 @@ module.exports = {
   getGeofences,
   deleteGeofence,
   logActivity,
-  getActivityLogs
+  getActivityLogs,
+  createPasswordReset,
+  verifyPasswordResetToken,
+  resetPasswordWithToken
 };
+

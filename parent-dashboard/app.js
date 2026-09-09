@@ -17,6 +17,9 @@ let leafletGeofencesLayers = [];
 let areGeofencesVisible = true;
 let isAudioRecordingRequested = false;
 let autoScreenshotTimer = null;
+let isLivePaused = false;
+let activeTimelineAppFilter = 'ALL';
+let currentView = 'portal';
 
 // Video Clip 5s State
 let currentVideoClip = {
@@ -194,6 +197,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initGoogleAuth();
   await loadSubscriptionInfo();
   await loadDevicesList();
+  await checkUrlResetToken();
   renderAll();
   startClock();
 });
@@ -656,13 +660,16 @@ function renderMap() {
     if (lastUpdatedEl) lastUpdatedEl.textContent = 'Sin señal satelital aún';
     if (accuracyBadge) accuracyBadge.textContent = 'Esperando GPS';
 
-    if (mapContainer && typeof L !== 'undefined' && !leafletMap) {
+    if (mapContainer && typeof L !== 'undefined') {
       try {
-        leafletMap = L.map('mapLeaflet', { zoomControl: true }).setView([-33.4489, -70.6693], 12);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '&copy; OpenStreetMap'
-        }).addTo(leafletMap);
+        if (!leafletMap) {
+          leafletMap = L.map('mapLeaflet', { zoomControl: true }).setView([-33.4489, -70.6693], 12);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap'
+          }).addTo(leafletMap);
+        }
+        setTimeout(() => { if (leafletMap) leafletMap.invalidateSize(); }, 150);
       } catch (e) {}
     }
     return;
@@ -727,15 +734,71 @@ function renderMap() {
     if (areGeofencesVisible) {
       fetchAndRenderGeofences();
     }
+    setTimeout(() => { if (leafletMap) leafletMap.invalidateSize(); }, 150);
   } catch (err) {
     console.error('Error inicializando mapa Leaflet', err);
   }
 }
 
+function renderTimelineAppChips() {
+  const chipsContainer = document.getElementById('timelineFilterChips');
+  if (!chipsContainer) return;
+  chipsContainer.innerHTML = '';
+
+  if (!currentDevice) return;
+
+  // Recopilar apps únicas del catálogo y del registro de actividad
+  const appsMap = new Map();
+  if (currentDevice.appCatalog) {
+    currentDevice.appCatalog.forEach(a => {
+      appsMap.set(a.package, { name: a.name, icon: a.icon || '📱', package: a.package });
+    });
+  }
+
+  if (currentDevice.activityLog) {
+    currentDevice.activityLog.forEach(item => {
+      if (item.package && !appsMap.has(item.package)) {
+        appsMap.set(item.package, {
+          name: item.appName || item.package,
+          icon: '📱',
+          package: item.package
+        });
+      }
+    });
+  }
+
+  // Chip 'Todas las Apps'
+  const btnAll = document.createElement('button');
+  btnAll.className = `timeline-chip ${activeTimelineAppFilter === 'ALL' ? 'active' : ''}`;
+  btnAll.innerHTML = `<span>🌐</span><span>Todas las Apps</span>`;
+  btnAll.addEventListener('click', () => {
+    activeTimelineAppFilter = 'ALL';
+    renderTimelineAppChips();
+    renderActivityFeed();
+  });
+  chipsContainer.appendChild(btnAll);
+
+  // Chips por cada aplicación detectada
+  appsMap.forEach(app => {
+    const btn = document.createElement('button');
+    btn.className = `timeline-chip ${activeTimelineAppFilter === app.package ? 'active' : ''}`;
+    btn.innerHTML = `<span>${app.icon}</span><span>${app.name}</span>`;
+    btn.addEventListener('click', () => {
+      activeTimelineAppFilter = app.package;
+      renderTimelineAppChips();
+      renderActivityFeed();
+    });
+    chipsContainer.appendChild(btn);
+  });
+}
+
 function renderActivityFeed() {
+  if (!activityFeedContainer) return;
   activityFeedContainer.innerHTML = '';
 
-  if (!currentDevice.activityLog || currentDevice.activityLog.length === 0) {
+  renderTimelineAppChips();
+
+  if (!currentDevice || !currentDevice.activityLog || currentDevice.activityLog.length === 0) {
     activityFeedContainer.innerHTML = `
       <div style="text-align: center; padding: 36px 16px; color: var(--text-muted); font-size: 0.84rem;">
         <div style="font-size: 1.8rem; margin-bottom: 8px;">⏳</div>
@@ -745,15 +808,246 @@ function renderActivityFeed() {
     return;
   }
 
-  currentDevice.activityLog.forEach(item => {
+  const filtered = currentDevice.activityLog.filter(item => {
+    if (activeTimelineAppFilter === 'ALL') return true;
+    return item.package === activeTimelineAppFilter || item.appName === activeTimelineAppFilter;
+  });
+
+  if (filtered.length === 0) {
+    activityFeedContainer.innerHTML = `
+      <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 0.85rem;">
+        No hay eventos registrados para esta aplicación todavía.
+      </div>
+    `;
+    return;
+  }
+
+  filtered.forEach(item => {
     const el = document.createElement('div');
     el.className = `activity-item ${item.type || 'info'}`;
+
+    let appBadgeHtml = '';
+    if (item.appName || item.package) {
+      const isBlocked = item.type === 'blocked' || item.type === 'warning';
+      const isGps = item.type === 'gps_alert';
+      const badgeClass = isGps ? 'log-app-badge app-gps' : (isBlocked ? 'log-app-badge app-blocked' : 'log-app-badge');
+      const icon = isGps ? '📍' : (isBlocked ? '🚫' : '📱');
+      appBadgeHtml = `<span class="${badgeClass}">${icon} ${item.appName || item.package}</span>`;
+    }
+
     el.innerHTML = `
-      <span class="activity-time">${item.time}</span>
-      <span class="activity-msg">${item.message}</span>
+      <span class="activity-time">${item.time || ''}</span>
+      <span class="activity-msg">${appBadgeHtml}${item.message}</span>
     `;
     activityFeedContainer.appendChild(el);
   });
+}
+// Screen Time Quick Controls (-15m / +15m)
+function decreaseDailyLimit15m() {
+  if (!currentDevice) {
+    showToast('No hay dispositivo vinculado', 'warning');
+    return;
+  }
+  const current = currentDevice.dailyLimitMinutes || 120;
+  const newLimit = Math.max(15, current - 15);
+  if (newLimit === current) {
+    showToast('El límite mínimo es de 15 minutos', 'warning');
+    return;
+  }
+  currentDevice.dailyLimitMinutes = newLimit;
+  updateRemoteConfig({ dailyLimitMinutes: newLimit });
+  renderHero();
+  renderScheduleControls();
+  const cardDaily = document.getElementById('cardDailyTimeLimitText');
+  if (cardDaily) cardDaily.textContent = formatMinutes(newLimit);
+  showToast(`Límite reducido a ${formatMinutes(newLimit)}`, 'info');
+}
+
+function increaseDailyLimit15m() {
+  if (!currentDevice) {
+    showToast('No hay dispositivo vinculado', 'warning');
+    return;
+  }
+  const current = currentDevice.dailyLimitMinutes || 120;
+  const newLimit = Math.min(720, current + 15);
+  currentDevice.dailyLimitMinutes = newLimit;
+  updateRemoteConfig({ dailyLimitMinutes: newLimit });
+  renderHero();
+  renderScheduleControls();
+  const cardDaily = document.getElementById('cardDailyTimeLimitText');
+  if (cardDaily) cardDaily.textContent = formatMinutes(newLimit);
+  showToast(`Límite aumentado a ${formatMinutes(newLimit)}`, 'success');
+}
+
+function increaseDailyLimit30m() {
+  if (!currentDevice) {
+    showToast('No hay dispositivo vinculado', 'warning');
+    return;
+  }
+  const current = currentDevice.dailyLimitMinutes || 120;
+  const newLimit = Math.min(720, current + 30);
+  currentDevice.dailyLimitMinutes = newLimit;
+  updateRemoteConfig({ dailyLimitMinutes: newLimit });
+  renderHero();
+  renderScheduleControls();
+  const cardDaily = document.getElementById('cardDailyTimeLimitText');
+  if (cardDaily) cardDaily.textContent = formatMinutes(newLimit);
+  showToast(`⚡ Límite aumentado a ${formatMinutes(newLimit)} (+30m)`, 'success');
+}
+
+// Live Screenshot Pause / Resume
+function toggleLiveScreenshotPause() {
+  if (!currentDevice) {
+    showToast('No hay dispositivo vinculado', 'warning');
+    return;
+  }
+  isLivePaused = !isLivePaused;
+  currentDevice.isLivePaused = isLivePaused;
+  updateRemoteConfig({ isLivePaused });
+  renderLivePauseState();
+  showToast(isLivePaused ? '⏸️ Capturas en vivo pausadas' : '▶️ Capturas en vivo reanudadas', isLivePaused ? 'warning' : 'success');
+}
+
+function renderLivePauseState() {
+  const btn = document.getElementById('btnToggleLivePause');
+  const icon = document.getElementById('livePauseBtnIcon');
+  const text = document.getElementById('livePauseBtnText');
+  const overlay = document.getElementById('livePausedOverlay');
+
+  if (isLivePaused) {
+    if (btn) {
+      btn.className = 'btn-live-toggle btn-paused';
+    }
+    if (icon) icon.textContent = '▶️';
+    if (text) text.textContent = 'Reanudar Capturas';
+    if (overlay) overlay.style.display = 'flex';
+  } else {
+    if (btn) {
+      btn.className = 'btn-live-toggle btn-running';
+    }
+    if (icon) icon.textContent = '⏸️';
+    if (text) text.textContent = 'Pausar Capturas';
+    if (overlay) overlay.style.display = 'none';
+  }
+}
+
+// Multi-Page View Navigation (Page 1: Portal vs Page 2: Monitoring)
+function switchView(viewName, targetAnchorId = null) {
+  const viewPortal = document.getElementById('viewPortal');
+  const viewMonitoring = document.getElementById('viewMonitoring');
+  const navTabPortal = document.getElementById('navTabPortal');
+  const navTabMonitoring = document.getElementById('navTabMonitoring');
+  const drawerLinkPortal = document.getElementById('drawerLinkPortal');
+  const drawerLinkMonitoring = document.getElementById('drawerLinkMonitoring');
+
+  currentView = viewName;
+
+  if (viewName === 'portal') {
+    if (viewPortal) {
+      viewPortal.classList.remove('hidden');
+      viewPortal.style.display = 'block';
+    }
+    if (viewMonitoring) {
+      viewMonitoring.classList.add('hidden');
+      viewMonitoring.style.display = 'none';
+    }
+    if (navTabPortal) navTabPortal.classList.add('active');
+    if (navTabMonitoring) navTabMonitoring.classList.remove('active');
+    if (drawerLinkPortal) drawerLinkPortal.classList.add('active');
+    if (drawerLinkMonitoring) drawerLinkMonitoring.classList.remove('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } else {
+    if (viewPortal) {
+      viewPortal.classList.add('hidden');
+      viewPortal.style.display = 'none';
+    }
+    if (viewMonitoring) {
+      viewMonitoring.classList.remove('hidden');
+      viewMonitoring.style.display = 'block';
+    }
+    if (navTabPortal) navTabPortal.classList.remove('active');
+    if (navTabMonitoring) navTabMonitoring.classList.add('active');
+    if (drawerLinkPortal) drawerLinkPortal.classList.remove('active');
+    if (drawerLinkMonitoring) drawerLinkMonitoring.classList.add('active');
+
+    setTimeout(() => {
+      if (leafletMap) {
+        leafletMap.invalidateSize();
+      } else {
+        renderMap();
+      }
+    }, 200);
+
+    if (targetAnchorId) {
+      setTimeout(() => {
+        const el = document.getElementById(targetAnchorId);
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+  closeMobileDrawer();
+}
+
+function openMobileDrawer() {
+  const drawer = document.getElementById('mobileNavDrawer');
+  const backdrop = document.getElementById('mobileDrawerBackdrop');
+  if (drawer) drawer.classList.add('open');
+  if (backdrop) backdrop.classList.add('open');
+}
+
+function closeMobileDrawer() {
+  const drawer = document.getElementById('mobileNavDrawer');
+  const backdrop = document.getElementById('mobileDrawerBackdrop');
+  if (drawer) drawer.classList.remove('open');
+  if (backdrop) backdrop.classList.remove('open');
+}
+
+// Unlink Device Modal & API
+function openUnlinkDeviceModal() {
+  if (!currentDevice) {
+    showToast('No hay dispositivo activo para desvincular.', 'warning');
+    return;
+  }
+  const modal = document.getElementById('modalUnlinkDevice');
+  const nameDisplay = document.getElementById('modalUnlinkDeviceName');
+  if (nameDisplay) {
+    nameDisplay.textContent = `${currentDevice.name} (${currentDevice.id})`;
+  }
+  if (modal) modal.classList.add('open');
+}
+
+function closeUnlinkDeviceModal() {
+  const modal = document.getElementById('modalUnlinkDevice');
+  if (modal) modal.classList.remove('open');
+}
+
+async function confirmUnlinkDevice() {
+  if (!currentDevice) return;
+  const devId = currentDevice.id;
+  try {
+    const res = await fetch(`/api/devices/${devId}`, { method: 'DELETE' });
+    if (res.ok) {
+      showToast(`Dispositivo ${devId} desvinculado con éxito`, 'warning');
+      closeUnlinkDeviceModal();
+      devicesList = devicesList.filter(d => d.id !== devId);
+      if (devicesList.length > 0) {
+        onDeviceSelected(devicesList[0].id);
+      } else {
+        currentDevice = null;
+        localStorage.removeItem('kidsshield_active_device_id');
+        renderNoDeviceState();
+        switchView('portal');
+      }
+      renderDeviceSelector();
+    } else {
+      showToast('Error al desvincular el dispositivo', 'danger');
+    }
+  } catch (err) {
+    console.error('Error desvinculando dispositivo', err);
+    showToast('Error de conexión al desvincular', 'danger');
+  }
 }
 
 // Live Clock in Simulator
@@ -768,6 +1062,258 @@ function startClock() {
 
 // Event Bindings
 function bindEvents() {
+  // Multi-Page Navigation Tabs & Buttons
+  const brandLogoBtn = document.getElementById('brandLogoBtn');
+  if (brandLogoBtn) brandLogoBtn.addEventListener('click', () => switchView('portal'));
+
+  const navTabPortal = document.getElementById('navTabPortal');
+  if (navTabPortal) navTabPortal.addEventListener('click', () => switchView('portal'));
+
+  const navTabMonitoring = document.getElementById('navTabMonitoring');
+  if (navTabMonitoring) navTabMonitoring.addEventListener('click', () => switchView('monitoring'));
+
+  const navTabApps = document.getElementById('navTabApps');
+  if (navTabApps) navTabApps.addEventListener('click', () => switchView('monitoring', 'deviceAppsCard'));
+
+  const navTabGps = document.getElementById('navTabGps');
+  if (navTabGps) navTabGps.addEventListener('click', () => switchView('monitoring', 'gpsTrackingCard'));
+
+  const navTabTimeline = document.getElementById('navTabTimeline');
+  if (navTabTimeline) navTabTimeline.addEventListener('click', () => switchView('monitoring', 'timelineCard'));
+
+  // Mobile Drawer Navigation
+  const btnMobileMenu = document.getElementById('btnMobileMenu');
+  if (btnMobileMenu) btnMobileMenu.addEventListener('click', openMobileDrawer);
+
+  const drawerCloseBtn = document.getElementById('drawerCloseBtn') || document.getElementById('btnCloseMobileDrawer');
+  if (drawerCloseBtn) drawerCloseBtn.addEventListener('click', closeMobileDrawer);
+
+  const mobileDrawerBackdrop = document.getElementById('mobileDrawerBackdrop');
+  if (mobileDrawerBackdrop) mobileDrawerBackdrop.addEventListener('click', closeMobileDrawer);
+
+  const drawerLinkPortal = document.getElementById('drawerLinkPortal');
+  if (drawerLinkPortal) drawerLinkPortal.addEventListener('click', () => switchView('portal'));
+
+  const drawerLinkMonitoring = document.getElementById('drawerLinkMonitoring');
+  if (drawerLinkMonitoring) drawerLinkMonitoring.addEventListener('click', () => switchView('monitoring'));
+
+  const drawerLinkApps = document.getElementById('drawerLinkApps');
+  if (drawerLinkApps) drawerLinkApps.addEventListener('click', () => switchView('monitoring', 'deviceAppsCard'));
+
+  const drawerLinkGps = document.getElementById('drawerLinkGps');
+  if (drawerLinkGps) drawerLinkGps.addEventListener('click', () => switchView('monitoring', 'gpsTrackingCard'));
+
+  const drawerLinkTimeline = document.getElementById('drawerLinkTimeline');
+  if (drawerLinkTimeline) drawerLinkTimeline.addEventListener('click', () => switchView('monitoring', 'timelineCard'));
+
+  const drawerBtnSubscription = document.getElementById('drawerBtnSubscription');
+  if (drawerBtnSubscription) {
+    drawerBtnSubscription.addEventListener('click', () => {
+      closeMobileDrawer();
+      switchView('portal', 'portalPricingSection');
+    });
+  }
+
+  const drawerBtnAuth = document.getElementById('drawerBtnAuth');
+  if (drawerBtnAuth) {
+    drawerBtnAuth.addEventListener('click', () => {
+      closeMobileDrawer();
+      if (adminUser) {
+        modalAdminLogin.classList.add('active');
+      } else {
+        switchView('portal', 'portalAuthCard');
+      }
+    });
+  }
+
+  // Portal CTA Buttons
+  const btnPortalGoMonitoring = document.getElementById('btnPortalGoMonitoring');
+  if (btnPortalGoMonitoring) btnPortalGoMonitoring.addEventListener('click', () => switchView('monitoring'));
+
+  const btnPortalOpenMonitoringFromCard = document.getElementById('btnPortalOpenMonitoringFromCard');
+  if (btnPortalOpenMonitoringFromCard) btnPortalOpenMonitoringFromCard.addEventListener('click', () => switchView('monitoring'));
+
+  const btnPortalScrollPlans = document.getElementById('btnPortalScrollPlans');
+  if (btnPortalScrollPlans) {
+    btnPortalScrollPlans.addEventListener('click', () => {
+      const plans = document.getElementById('portalPricingSection');
+      if (plans) plans.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  const btnPortalLogout = document.getElementById('btnPortalLogout');
+  if (btnPortalLogout) btnPortalLogout.addEventListener('click', logoutAdmin);
+
+  // Portal Auth Tabs
+  const portalTabLogin = document.getElementById('portalTabLogin');
+  const portalTabRegister = document.getElementById('portalTabRegister');
+  const portalLoginForm = document.getElementById('portalLoginForm');
+  const portalRegisterForm = document.getElementById('portalRegisterForm');
+
+  if (portalTabLogin && portalTabRegister) {
+    portalTabLogin.addEventListener('click', () => {
+      portalTabLogin.classList.add('active');
+      portalTabRegister.classList.remove('active');
+      if (portalLoginForm) portalLoginForm.style.display = 'block';
+      if (portalRegisterForm) portalRegisterForm.style.display = 'none';
+    });
+    portalTabRegister.addEventListener('click', () => {
+      portalTabRegister.classList.add('active');
+      portalTabLogin.classList.remove('active');
+      if (portalLoginForm) portalLoginForm.style.display = 'none';
+      if (portalRegisterForm) portalRegisterForm.style.display = 'block';
+    });
+  }
+
+  const btnPortalSubmitLogin = document.getElementById('btnPortalSubmitLogin');
+  if (btnPortalSubmitLogin) {
+    btnPortalSubmitLogin.addEventListener('click', async () => {
+      const email = document.getElementById('portalLoginEmail')?.value.trim();
+      const password = document.getElementById('portalLoginPassword')?.value;
+      if (!email || !password) {
+        showToast('Ingresa tu correo y contraseña.', 'warning');
+        return;
+      }
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          adminAuthToken = data.token;
+          adminUser = data.user;
+          localStorage.setItem('kidsshield_admin_token', adminAuthToken);
+          setAdminLoggedInUI(adminUser);
+          showToast(`¡Bienvenido/a ${adminUser.name}!`, 'success');
+        } else {
+          const err = await res.json();
+          showToast(err.error || 'Error al iniciar sesión', 'danger');
+        }
+      } catch (e) {
+        showToast('Error de conexión', 'danger');
+      }
+    });
+  }
+
+  // Forgot Password Event Bindings
+  const btnOpenForgotPassword = document.getElementById('btnOpenForgotPassword');
+  if (btnOpenForgotPassword) btnOpenForgotPassword.addEventListener('click', openForgotPasswordModal);
+
+  const btnModalOpenForgotPassword = document.getElementById('btnModalOpenForgotPassword');
+  if (btnModalOpenForgotPassword) btnModalOpenForgotPassword.addEventListener('click', openForgotPasswordModal);
+
+  const btnCloseForgotModal = document.getElementById('btnCloseForgotModal');
+  if (btnCloseForgotModal) btnCloseForgotModal.addEventListener('click', closeForgotPasswordModal);
+
+  const btnCloseForgotModalFooter = document.getElementById('btnCloseForgotModalFooter');
+  if (btnCloseForgotModalFooter) btnCloseForgotModalFooter.addEventListener('click', closeForgotPasswordModal);
+
+  const btnSubmitForgotPassword = document.getElementById('btnSubmitForgotPassword');
+  if (btnSubmitForgotPassword) btnSubmitForgotPassword.addEventListener('click', submitForgotPassword);
+
+  const btnBackToLoginFromForgot = document.getElementById('btnBackToLoginFromForgot');
+  if (btnBackToLoginFromForgot) btnBackToLoginFromForgot.addEventListener('click', backToLoginFromForgot);
+
+  const forgotEmailInput = document.getElementById('forgotEmailInput');
+  if (forgotEmailInput) {
+    forgotEmailInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitForgotPassword();
+    });
+  }
+
+  // Reset Password Event Bindings
+  const btnCloseResetModal = document.getElementById('btnCloseResetModal');
+  if (btnCloseResetModal) btnCloseResetModal.addEventListener('click', closeResetPasswordModal);
+
+  const btnCloseResetModalFooter = document.getElementById('btnCloseResetModalFooter');
+  if (btnCloseResetModalFooter) btnCloseResetModalFooter.addEventListener('click', closeResetPasswordModal);
+
+  const btnSubmitResetPassword = document.getElementById('btnSubmitResetPassword');
+  if (btnSubmitResetPassword) btnSubmitResetPassword.addEventListener('click', submitResetPassword);
+
+  const btnToggleResetPasswordView = document.getElementById('btnToggleResetPasswordView');
+  if (btnToggleResetPasswordView) btnToggleResetPasswordView.addEventListener('click', toggleResetPasswordVisibility);
+
+  const btnGoLoginAfterReset = document.getElementById('btnGoLoginAfterReset');
+  if (btnGoLoginAfterReset) {
+    btnGoLoginAfterReset.addEventListener('click', () => {
+      closeResetPasswordModal();
+      switchView('portal', 'portalAuthCard');
+    });
+  }
+
+  const resetConfirmPassword = document.getElementById('resetConfirmPassword');
+  if (resetConfirmPassword) {
+    resetConfirmPassword.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitResetPassword();
+    });
+  }
+
+  const btnPortalSubmitRegister = document.getElementById('btnPortalSubmitRegister');
+  if (btnPortalSubmitRegister) {
+    btnPortalSubmitRegister.addEventListener('click', async () => {
+      const name = document.getElementById('portalRegName')?.value.trim();
+      const email = document.getElementById('portalRegEmail')?.value.trim();
+      const password = document.getElementById('portalRegPassword')?.value;
+      if (!name || !email || !password) {
+        showToast('Por favor completa todos los campos de registro.', 'warning');
+        return;
+      }
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, password })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          adminAuthToken = data.token;
+          adminUser = data.user;
+          localStorage.setItem('kidsshield_admin_token', adminAuthToken);
+          setAdminLoggedInUI(adminUser);
+          showToast('🎉 ¡Familia registrada con éxito!', 'success');
+        } else {
+          const err = await res.json();
+          showToast(err.error || 'Error al registrar', 'danger');
+        }
+      } catch (e) {
+        showToast('Error de conexión', 'danger');
+      }
+    });
+  }
+
+  // Inline Screen Time Stepper (-15m / +15m)
+  const btnDecreaseLimit = document.getElementById('btnDecreaseLimit');
+  if (btnDecreaseLimit) btnDecreaseLimit.addEventListener('click', decreaseDailyLimit15m);
+
+  const btnIncreaseLimit = document.getElementById('btnIncreaseLimit');
+  if (btnIncreaseLimit) btnIncreaseLimit.addEventListener('click', increaseDailyLimit15m);
+
+  const btnIncreaseLimit30 = document.getElementById('btnIncreaseLimit30');
+  if (btnIncreaseLimit30) btnIncreaseLimit30.addEventListener('click', increaseDailyLimit30m);
+
+  // Live Screenshot Pause / Resume
+  const btnToggleLivePause = document.getElementById('btnToggleLivePause');
+  if (btnToggleLivePause) btnToggleLivePause.addEventListener('click', toggleLiveScreenshotPause);
+
+  const btnOverlayResumeLive = document.getElementById('btnOverlayResumeLive');
+  if (btnOverlayResumeLive) btnOverlayResumeLive.addEventListener('click', toggleLiveScreenshotPause);
+
+  // Unlink Device Modal
+  const btnUnlinkDevice = document.getElementById('btnUnlinkDevice');
+  if (btnUnlinkDevice) btnUnlinkDevice.addEventListener('click', openUnlinkDeviceModal);
+
+  const btnCloseUnlinkDeviceModal = document.getElementById('btnCloseUnlinkDeviceModal');
+  if (btnCloseUnlinkDeviceModal) btnCloseUnlinkDeviceModal.addEventListener('click', closeUnlinkDeviceModal);
+
+  const btnCancelUnlinkDevice = document.getElementById('btnCancelUnlinkDevice');
+  if (btnCancelUnlinkDevice) btnCancelUnlinkDevice.addEventListener('click', closeUnlinkDeviceModal);
+
+  const btnConfirmUnlinkDevice = document.getElementById('btnConfirmUnlinkDevice');
+  if (btnConfirmUnlinkDevice) btnConfirmUnlinkDevice.addEventListener('click', confirmUnlinkDevice);
+
   // Master Lock
   btnMasterLock.addEventListener('click', () => {
     const newLockState = !currentDevice.isLocked;
@@ -1797,35 +2343,67 @@ async function initGoogleAuth() {
           googleStatusBadge.textContent = 'Google Activo';
           googleStatusBadge.className = 'badge badge-accent';
         }
-        if (googleOfficialButtonWrapper) {
-          googleOfficialButtonWrapper.style.display = 'flex';
-        }
-        // Initialize Google Button
-        if (window.google && window.google.accounts && window.google.accounts.id) {
+
+        const renderGisButtons = () => {
+          if (!window.google || !window.google.accounts || !window.google.accounts.id) return false;
+
+          const wrapperLogin = document.getElementById('googleOfficialButtonWrapperLogin');
+          const wrapperRegister = document.getElementById('googleOfficialButtonWrapperRegister');
+          if (wrapperLogin) wrapperLogin.style.display = 'flex';
+          if (wrapperRegister) wrapperRegister.style.display = 'flex';
+          if (btnLoginWithGoogle) btnLoginWithGoogle.style.display = 'none';
+          if (btnRegisterWithGoogle) btnRegisterWithGoogle.style.display = 'none';
+
           window.google.accounts.id.initialize({
             client_id: config.googleClientId,
             callback: (response) => window.handleGoogleLoginCallback(response, false),
             auto_prompt: false
           });
-          const mount = document.getElementById('googleButtonMount');
-          if (mount) {
-            mount.innerHTML = '';
-            window.google.accounts.id.renderButton(mount, {
+          const mountLogin = document.getElementById('googleButtonMountLogin');
+          if (mountLogin) {
+            mountLogin.innerHTML = '';
+            window.google.accounts.id.renderButton(mountLogin, {
               theme: 'filled_blue',
               size: 'large',
               text: 'sign_in_with',
-              shape: 'rectangular'
+              shape: 'rectangular',
+              width: 320
             });
           }
+          const mountRegister = document.getElementById('googleButtonMountRegister');
+          if (mountRegister) {
+            mountRegister.innerHTML = '';
+            window.google.accounts.id.renderButton(mountRegister, {
+              theme: 'filled_blue',
+              size: 'large',
+              text: 'signup_with',
+              shape: 'rectangular',
+              width: 320
+            });
+          }
+          return true;
+        };
+
+        if (!renderGisButtons()) {
+          let attempts = 0;
+          const interval = setInterval(() => {
+            attempts++;
+            if (renderGisButtons() || attempts > 20) {
+              clearInterval(interval);
+            }
+          }, 250);
         }
       } else {
         if (googleStatusBadge) {
           googleStatusBadge.textContent = 'Requiere Client ID';
           googleStatusBadge.className = 'badge badge-warning';
         }
-        if (googleOfficialButtonWrapper) {
-          googleOfficialButtonWrapper.style.display = 'none';
-        }
+        const wrapperLogin = document.getElementById('googleOfficialButtonWrapperLogin');
+        const wrapperRegister = document.getElementById('googleOfficialButtonWrapperRegister');
+        if (wrapperLogin) wrapperLogin.style.display = 'none';
+        if (wrapperRegister) wrapperRegister.style.display = 'none';
+        if (btnLoginWithGoogle) btnLoginWithGoogle.style.display = 'flex';
+        if (btnRegisterWithGoogle) btnRegisterWithGoogle.style.display = 'flex';
       }
     }
   } catch (err) {
@@ -1981,6 +2559,264 @@ async function registerFamilyAccount() {
   }
 }
 
+// ----------------------------------------------------------------
+// Forgot Password & Reset Password Management
+// ----------------------------------------------------------------
+let activeResetToken = null;
+
+function openForgotPasswordModal() {
+  const modal = document.getElementById('modalForgotPassword');
+  const emailInput = document.getElementById('forgotEmailInput');
+  const formBox = document.getElementById('forgotFormContainer');
+  const successBox = document.getElementById('forgotSuccessContainer');
+  const previewBox = document.getElementById('forgotEmailPreviewBox');
+
+  if (formBox) formBox.style.display = 'block';
+  if (successBox) successBox.style.display = 'none';
+  if (previewBox) previewBox.style.display = 'none';
+
+  const loginEmail = document.getElementById('portalLoginEmail')?.value.trim();
+  if (emailInput) {
+    emailInput.value = loginEmail || '';
+    setTimeout(() => emailInput.focus(), 150);
+  }
+
+  if (modalAdminLogin) modalAdminLogin.classList.remove('active');
+  if (modal) modal.classList.add('active');
+}
+
+function closeForgotPasswordModal() {
+  const modal = document.getElementById('modalForgotPassword');
+  if (modal) modal.classList.remove('active');
+}
+
+function backToLoginFromForgot() {
+  closeForgotPasswordModal();
+  switchView('portal', 'portalAuthCard');
+  const loginEmail = document.getElementById('portalLoginEmail');
+  const forgotEmail = document.getElementById('forgotEmailInput');
+  if (loginEmail && forgotEmail && forgotEmail.value) {
+    loginEmail.value = forgotEmail.value;
+  }
+}
+
+async function submitForgotPassword() {
+  const emailInput = document.getElementById('forgotEmailInput');
+  const submitBtn = document.getElementById('btnSubmitForgotPassword');
+  const email = emailInput ? emailInput.value.trim() : '';
+
+  if (!email) {
+    showToast('Ingresa tu correo electrónico.', 'warning');
+    if (emailInput) emailInput.focus();
+    return;
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    showToast('Ingresa un correo electrónico con formato válido.', 'warning');
+    if (emailInput) emailInput.focus();
+    return;
+  }
+
+  const originalBtnHtml = submitBtn ? submitBtn.innerHTML : '';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>⏳ Enviando correo...</span>';
+  }
+
+  try {
+    const res = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      const formBox = document.getElementById('forgotFormContainer');
+      const successBox = document.getElementById('forgotSuccessContainer');
+      const msgEl = document.getElementById('forgotSuccessMessage');
+      const previewBox = document.getElementById('forgotEmailPreviewBox');
+      const previewLink = document.getElementById('linkOpenEmailPreview');
+      const simBtn = document.getElementById('btnSimulateResetLink');
+
+      if (formBox) formBox.style.display = 'none';
+      if (successBox) successBox.style.display = 'block';
+      if (msgEl && data.message) msgEl.textContent = data.message;
+
+      if (data.previewUrl) {
+        if (previewBox) previewBox.style.display = 'block';
+        if (previewLink) previewLink.href = data.previewUrl;
+      }
+
+      if (data.resetUrl) {
+        const match = data.resetUrl.match(/reset_token=([^&]+)/);
+        const extractedToken = match ? match[1] : null;
+        if (simBtn && extractedToken) {
+          simBtn.onclick = () => {
+            closeForgotPasswordModal();
+            openResetPasswordModal(extractedToken, email);
+          };
+        }
+      }
+
+      showToast('✉️ Correo de recuperación enviado', 'success');
+    } else {
+      showToast(data.error || 'No se pudo enviar el correo de recuperación', 'danger');
+    }
+  } catch (err) {
+    console.error('Error enviando correo de recuperación:', err);
+    showToast('Error de conexión al enviar el correo', 'danger');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = originalBtnHtml;
+    }
+  }
+}
+
+function openResetPasswordModal(token, emailHint = '') {
+  activeResetToken = token;
+  const modal = document.getElementById('modalResetPassword');
+  const emailDisplay = document.getElementById('resetTargetEmailDisplay');
+  const formBox = document.getElementById('resetFormContainer');
+  const successBox = document.getElementById('resetSuccessContainer');
+  const newPassInput = document.getElementById('resetNewPassword');
+  const confirmPassInput = document.getElementById('resetConfirmPassword');
+
+  if (emailDisplay) emailDisplay.textContent = emailHint || 'Tu cuenta familiar';
+  if (newPassInput) newPassInput.value = '';
+  if (confirmPassInput) confirmPassInput.value = '';
+  if (formBox) formBox.style.display = 'block';
+  if (successBox) successBox.style.display = 'none';
+
+  if (modal) modal.classList.add('active');
+  if (newPassInput) setTimeout(() => newPassInput.focus(), 150);
+}
+
+function closeResetPasswordModal() {
+  const modal = document.getElementById('modalResetPassword');
+  if (modal) modal.classList.remove('active');
+  activeResetToken = null;
+}
+
+async function submitResetPassword() {
+  if (!activeResetToken) {
+    showToast('El token de restablecimiento es inválido o no existe.', 'warning');
+    return;
+  }
+
+  const newPassInput = document.getElementById('resetNewPassword');
+  const confirmPassInput = document.getElementById('resetConfirmPassword');
+  const submitBtn = document.getElementById('btnSubmitResetPassword');
+
+  const password = newPassInput ? newPassInput.value : '';
+  const confirmPassword = confirmPassInput ? confirmPassInput.value : '';
+
+  if (!password) {
+    showToast('Ingresa la nueva contraseña.', 'warning');
+    if (newPassInput) newPassInput.focus();
+    return;
+  }
+
+  if (password.length < 8) {
+    showToast('La nueva contraseña debe tener al menos 8 caracteres.', 'warning');
+    if (newPassInput) newPassInput.focus();
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    showToast('Las contraseñas no coinciden. Verifica e intenta nuevamente.', 'warning');
+    if (confirmPassInput) confirmPassInput.focus();
+    return;
+  }
+
+  const originalBtnHtml = submitBtn ? submitBtn.innerHTML : '';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>⏳ Guardando nueva contraseña...</span>';
+  }
+
+  try {
+    const res = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: activeResetToken, password })
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      const formBox = document.getElementById('resetFormContainer');
+      const successBox = document.getElementById('resetSuccessContainer');
+      if (formBox) formBox.style.display = 'none';
+      if (successBox) successBox.style.display = 'block';
+
+      // Prellenar el login con el correo actualizado
+      const loginEmail = document.getElementById('portalLoginEmail');
+      if (loginEmail && data.email) {
+        loginEmail.value = data.email;
+      }
+
+      // Limpiar el parámetro de la URL sin recargar
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
+      showToast('🎉 ¡Contraseña restablecida con éxito!', 'success');
+    } else {
+      showToast(data.error || 'Error al restablecer la contraseña', 'danger');
+    }
+  } catch (err) {
+    console.error('Error al restablecer contraseña:', err);
+    showToast('Error de conexión con el servidor', 'danger');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = originalBtnHtml;
+    }
+  }
+}
+
+function toggleResetPasswordVisibility() {
+  const input = document.getElementById('resetNewPassword');
+  const btn = document.getElementById('btnToggleResetPasswordView');
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    if (btn) btn.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    if (btn) btn.textContent = '👁️';
+  }
+}
+
+async function checkUrlResetToken() {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('reset_token');
+    if (!token) return;
+
+    console.log('[Auth] 🔑 Token de recuperación detectado en la URL:', token);
+
+    const res = await fetch(`/api/auth/verify-reset-token?token=${encodeURIComponent(token)}`);
+    const data = await res.json();
+
+    if (res.ok && data.valid) {
+      openResetPasswordModal(token, data.email);
+      showToast(`Bienvenido/a ${data.userName || ''}. Define tu nueva contraseña.`, 'info');
+    } else {
+      showToast(data.error || 'El enlace de recuperación ha expirado o no es válido.', 'warning');
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  } catch (e) {
+    console.warn('Error verificando token desde URL:', e);
+  }
+}
+
 // Load Subscription & Plans Info
 async function loadSubscriptionInfo() {
   try {
@@ -2068,6 +2904,20 @@ function setAdminLoggedInUI(user, sub) {
   if (adminLoggedOutSection) adminLoggedOutSection.style.display = 'none';
   if (adminLoggedInSection) adminLoggedInSection.style.display = 'block';
 
+  // Portal View Auth Card sync
+  const portalUserLoggedInBox = document.getElementById('portalUserLoggedInBox');
+  const portalLoggedOutBox = document.getElementById('portalLoggedOutBox');
+  const portalWelcomeName = document.getElementById('portalWelcomeName');
+  const portalWelcomeEmail = document.getElementById('portalWelcomeEmail');
+  const portalDevicesCountText = document.getElementById('portalDevicesCountText');
+  const portalAvatarDisplay = document.getElementById('portalAvatarDisplay');
+
+  if (portalUserLoggedInBox) portalUserLoggedInBox.style.display = 'block';
+  if (portalLoggedOutBox) portalLoggedOutBox.style.display = 'none';
+  if (portalWelcomeName) portalWelcomeName.textContent = `¡Hola, ${user.name || 'Familia'}!`;
+  if (portalWelcomeEmail) portalWelcomeEmail.textContent = user.email || '';
+  if (portalDevicesCountText) portalDevicesCountText.textContent = `${devicesList.length} dispositivo(s) vinculado(s)`;
+
   const authBannerPrompt = document.getElementById('authBannerPrompt');
   if (authBannerPrompt) authBannerPrompt.style.display = 'none';
 
@@ -2078,6 +2928,14 @@ function setAdminLoggedInUI(user, sub) {
     adminNameText.textContent = firstName;
   }
   const avatarUrl = user.picture || (user.avatar && (user.avatar.startsWith('http://') || user.avatar.startsWith('https://') || user.avatar.startsWith('data:')) ? user.avatar : null);
+
+  if (portalAvatarDisplay) {
+    if (avatarUrl) {
+      portalAvatarDisplay.innerHTML = `<img src="${avatarUrl}" alt="Avatar" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+    } else {
+      portalAvatarDisplay.textContent = user.avatar || '👨‍💼';
+    }
+  }
 
   const adminAvatarIcon = document.getElementById('adminAvatarIcon');
   if (adminAvatarIcon) {
@@ -2116,6 +2974,12 @@ function setAdminLoggedInUI(user, sub) {
 function setAdminLoggedOutUI() {
   if (adminLoggedOutSection) adminLoggedOutSection.style.display = 'block';
   if (adminLoggedInSection) adminLoggedInSection.style.display = 'none';
+
+  // Portal View Auth Card sync
+  const portalUserLoggedInBox = document.getElementById('portalUserLoggedInBox');
+  const portalLoggedOutBox = document.getElementById('portalLoggedOutBox');
+  if (portalUserLoggedInBox) portalUserLoggedInBox.style.display = 'none';
+  if (portalLoggedOutBox) portalLoggedOutBox.style.display = 'block';
 
   const authBannerPrompt = document.getElementById('authBannerPrompt');
   if (authBannerPrompt) authBannerPrompt.style.display = 'flex';
@@ -2215,15 +3079,40 @@ function setupWebSocket() {
       try {
         const data = JSON.parse(event.data);
 
-        if (data.type === 'DEVICE_UPDATED' && data.payload.id === currentDevice.id) {
+        if (data.type === 'DEVICE_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
           currentDevice = data.payload;
           renderAll();
+        } else if (data.type === 'DEVICE_DELETED') {
+          showToast(`Dispositivo ${data.payload?.id || ''} fue desvinculado`, 'info');
+          devicesList = devicesList.filter(d => d.id !== data.payload?.id);
+          if (currentDevice && currentDevice.id === data.payload?.id) {
+            currentDevice = null;
+            localStorage.removeItem('kidsshield_active_device_id');
+            renderNoDeviceState();
+            switchView('portal');
+          }
+          renderDeviceSelector();
+        } else if (data.type === 'EVENT_RECORDED' && currentDevice && data.payload.id === currentDevice.id) {
+          if (!currentDevice.activityLog) currentDevice.activityLog = [];
+          currentDevice.activityLog.unshift(data.payload.event);
+          if (currentDevice.activityLog.length > 50) currentDevice.activityLog.pop();
+          renderActivityFeed();
+          playAlertSound();
+          if (data.payload.event.type === 'blocked' || data.payload.event.type === 'gps_alert') {
+            triggerWebNotification('⚠️ Alerta KidsShield', data.payload.event.message);
+          }
+        } else if (data.type === 'CONFIG_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
+          Object.assign(currentDevice, data.payload.config);
+          renderHero();
+          renderScheduleControls();
         } else if (data.type === 'DEVICES_UPDATED') {
           loadDevicesList();
-        } else if (data.type === 'SCREENSHOT_UPDATED' && data.payload.id === currentDevice.id) {
-          currentDevice.lastScreenshot = data.payload.imageBase64 || data.payload.screenshot;
-          currentDevice.lastScreenshotTime = data.payload.timestamp;
-          renderSimulator();
+        } else if (data.type === 'SCREENSHOT_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
+          if (!isLivePaused) {
+            currentDevice.lastScreenshot = data.payload.imageBase64 || data.payload.screenshot;
+            currentDevice.lastScreenshotTime = data.payload.timestamp;
+            renderSimulator();
+          }
 
           const btnText = document.getElementById('btnCaptureScreenText');
           const btnIcon = document.getElementById('btnCaptureScreenIcon');
@@ -2232,13 +3121,13 @@ function setupWebSocket() {
 
           playAlertSound();
           showToast('📸 ¡Captura de pantalla recibida!', 'success');
-        } else if (data.type === 'VIDEO_CLIP_UPDATED' && data.payload.id === currentDevice.id) {
+        } else if (data.type === 'VIDEO_CLIP_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
           handleNewVideoClip(data.payload.frames, data.payload.intervalMs || 500);
-        } else if ((data.type === 'AUDIO_CLIP_UPDATED' || data.type === 'AUDIO_CLIP_READY') && data.payload.id === currentDevice.id) {
+        } else if ((data.type === 'AUDIO_CLIP_UPDATED' || data.type === 'AUDIO_CLIP_READY') && currentDevice && data.payload.id === currentDevice.id) {
           handleNewAudioClip(data.payload.audioBase64, data.payload.duration || 5, data.payload.timestamp);
         } else if (data.type === 'GEOFENCE_UPDATED' || data.type === 'GEOFENCE_DELETED') {
           fetchAndRenderGeofences();
-        } else if (data.type === 'LOCATION_UPDATED' && data.payload.id === currentDevice.id) {
+        } else if (data.type === 'LOCATION_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
           currentDevice.location = data.payload.location;
           renderMap();
           if (isRouteHistoryVisible) {

@@ -31,7 +31,11 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.Calendar;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class UsageMonitorService extends Service {
 
@@ -66,12 +70,36 @@ public class UsageMonitorService extends Service {
         super.onCreate();
         instanceRef = new java.lang.ref.WeakReference<>(this);
         createNotificationChannel();
-        startForeground(NOTIF_ID, buildForegroundNotification("Protección activa"));
-
-        setupMonitoringLoop();
+        startForeground(NOTIF_ID, buildForegroundNotification());
+        startPeriodicSync();
     }
 
-    private void setupMonitoringLoop() {
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    "KidsShield Protection Service",
+                    NotificationManager.IMPORTANCE_LOW
+            );
+            channel.setDescription("Monitorea el uso de apps y protege este dispositivo.");
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm != null) {
+                nm.createNotificationChannel(channel);
+            }
+        }
+    }
+
+    private Notification buildForegroundNotification() {
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("KidsShield Activo")
+                .setContentText("El control parental y la ubicación están activos.")
+                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build();
+    }
+
+    private void startPeriodicSync() {
         monitorRunnable = new Runnable() {
             @Override
             public void run() {
@@ -94,33 +122,110 @@ public class UsageMonitorService extends Service {
 
         UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
         int totalScreenTimeMinutes = 0;
-        JSONArray appCatalog = new JSONArray();
-        PackageManager pm = getPackageManager();
+        Map<String, Integer> usageMap = new HashMap<>();
 
+        // 1. Obtener tiempo de uso acumulado hoy
         if (usm != null) {
             List<UsageStats> stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, endTime);
             if (stats != null && !stats.isEmpty()) {
                 for (UsageStats u : stats) {
                     long totalTimeInForeground = u.getTotalTimeInForeground();
-                    if (totalTimeInForeground > 60000) { // Mayor a 1 minuto
+                    if (totalTimeInForeground > 0) {
                         int minutes = (int) (totalTimeInForeground / (1000 * 60));
-                        totalScreenTimeMinutes += minutes;
-
-                        try {
-                            ApplicationInfo ai = pm.getApplicationInfo(u.getPackageName(), 0);
-                            String appName = pm.getApplicationLabel(ai).toString();
-
-                            JSONObject appObj = new JSONObject();
-                            appObj.put("package", u.getPackageName());
-                            appObj.put("name", appName);
-                            appObj.put("timeTodayMinutes", minutes);
-                            appObj.put("icon", "📱");
-                            appObj.put("category", "Aplicaciones");
-                            appCatalog.put(appObj);
-                        } catch (Exception ignored) {
+                        usageMap.put(u.getPackageName(), minutes);
+                        if (minutes > 0) {
+                            totalScreenTimeMinutes += minutes;
                         }
                     }
                 }
+            }
+        }
+
+        // 2. Detección exhaustiva de TODAS las apps instaladas (Juegos, Redes, Videos, etc.)
+        PackageManager pm = getPackageManager();
+        JSONArray appCatalog = new JSONArray();
+        List<ApplicationInfo> installedApps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
+        Set<String> processedPackages = new HashSet<>();
+
+        for (ApplicationInfo ai : installedApps) {
+            String pkg = ai.packageName;
+            if (processedPackages.contains(pkg)) continue;
+
+            // Filtrar apps que no tienen interfaz de usuario a menos que sean apps conocidas
+            boolean hasLauncher = pm.getLaunchIntentForPackage(pkg) != null;
+            boolean isThirdParty = (ai.flags & ApplicationInfo.FLAG_SYSTEM) == 0;
+            boolean isKnownEssentialApp = pkg.contains("youtube") || pkg.contains("chrome") 
+                    || pkg.contains("whatsapp") || pkg.contains("instagram") || pkg.contains("tiktok")
+                    || pkg.contains("netflix") || pkg.contains("spotify") || pkg.contains("roblox")
+                    || pkg.contains("clash") || pkg.contains("brawl") || pkg.contains("freefire");
+
+            if (!hasLauncher && !isThirdParty && !isKnownEssentialApp) {
+                continue;
+            }
+
+            processedPackages.add(pkg);
+
+            try {
+                String appName = pm.getApplicationLabel(ai).toString();
+                int timeToday = usageMap.containsKey(pkg) ? usageMap.get(pkg) : 0;
+
+                // Clasificación inteligente de Categoría e Ícono
+                String category = "Aplicaciones";
+                String icon = "📱";
+
+                String lowerPkg = pkg.toLowerCase();
+                String lowerName = appName.toLowerCase();
+
+                // Categoría Juegos
+                boolean isGame = false;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    isGame = (ai.category == ApplicationInfo.CATEGORY_GAME);
+                }
+                if (!isGame) {
+                    isGame = (ai.flags & ApplicationInfo.FLAG_IS_GAME) != 0
+                            || lowerPkg.contains("game") || lowerPkg.contains("juego")
+                            || lowerPkg.contains("roblox") || lowerPkg.contains("minecraft")
+                            || lowerPkg.contains("supercell") || lowerPkg.contains("brawl")
+                            || lowerPkg.contains("clash") || lowerPkg.contains("fortnite")
+                            || lowerPkg.contains("pokemon") || lowerPkg.contains("freefire")
+                            || lowerPkg.contains("pubg") || lowerPkg.contains("subway")
+                            || lowerPkg.contains("candy") || lowerPkg.contains("king.")
+                            || lowerPkg.contains("ea.") || lowerPkg.contains("gameloft");
+                }
+
+                if (isGame) {
+                    category = "Juegos";
+                    icon = "🎮";
+                } else if (lowerPkg.contains("whatsapp") || lowerPkg.contains("instagram")
+                        || lowerPkg.contains("tiktok") || lowerPkg.contains("facebook")
+                        || lowerPkg.contains("messenger") || lowerPkg.contains("snapchat")
+                        || lowerPkg.contains("telegram") || lowerPkg.contains("discord")
+                        || lowerPkg.contains("twitter") || lowerPkg.contains("x.corp")
+                        || lowerPkg.contains("reddit")) {
+                    category = "Redes Sociales";
+                    icon = "💬";
+                } else if (lowerPkg.contains("youtube") || lowerPkg.contains("netflix")
+                        || lowerPkg.contains("disney") || lowerPkg.contains("primevideo")
+                        || lowerPkg.contains("twitch") || lowerPkg.contains("spotify")
+                        || lowerPkg.contains("crunchyroll") || lowerPkg.contains("hbo")
+                        || lowerPkg.contains("music") || lowerPkg.contains("video")) {
+                    category = "Streaming y Videos";
+                    icon = "🎬";
+                } else if (lowerPkg.contains("chrome") || lowerPkg.contains("firefox")
+                        || lowerPkg.contains("opera") || lowerPkg.contains("edge")
+                        || lowerPkg.contains("browser")) {
+                    category = "Navegación Web";
+                    icon = "🌐";
+                }
+
+                JSONObject appObj = new JSONObject();
+                appObj.put("package", pkg);
+                appObj.put("name", appName);
+                appObj.put("timeTodayMinutes", timeToday);
+                appObj.put("icon", icon);
+                appObj.put("category", category);
+                appCatalog.put(appObj);
+            } catch (Exception ignored) {
             }
         }
 
@@ -132,14 +237,22 @@ public class UsageMonitorService extends Service {
             config.setLockReason("Límite diario de tiempo de pantalla alcanzado (" + config.getDailyLimitMinutes() + " min).");
         }
 
+        // Supervisión activa de GPS permanente
+        LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        boolean isGpsEnabled = (lm != null && lm.isProviderEnabled(LocationManager.GPS_PROVIDER));
+        if (!isGpsEnabled && config.isProtectionEnforced()) {
+            Log.w(TAG, "GPS desactivado detectado. Emitiendo alerta...");
+            SyncClient.sendEvent(this, "gps_alert", "system.gps", "Servicio GPS", "⚠️ El GPS ha sido apagado en el teléfono del menor.");
+        }
+
         // Get Location
         JSONObject locationObj = getDeviceLocation();
 
         // Sync with parent server
         SyncClient.sendReport(this, battery, totalScreenTimeMinutes, "", appCatalog, locationObj, null);
 
-        // Auto periodic screenshot capture (every 2 cycles = ~60s)
-        if (syncCycleCount % 2 == 0) {
+        // Captura de pantalla: SOLO si el padre lo tiene configurado expresamente y no está pausado
+        if (config.isAutoScreenshotEnabled() && !config.isLivePaused()) {
             AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
             if (a11y != null) {
                 a11y.captureScreenshot();
@@ -229,29 +342,6 @@ public class UsageMonitorService extends Service {
         cal.set(Calendar.SECOND, 0);
         cal.set(Calendar.MILLISECOND, 0);
         return cal.getTimeInMillis();
-    }
-
-    private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    "KidsShield Servicio de Protección",
-                    NotificationManager.IMPORTANCE_LOW
-            );
-            channel.setDescription("Monitorea el bienestar digital del dispositivo");
-            NotificationManager nm = getSystemService(NotificationManager.class);
-            if (nm != null) nm.createNotificationChannel(channel);
-        }
-    }
-
-    private Notification buildForegroundNotification(String text) {
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("KidsShield Protección Activa")
-                .setContentText(text)
-                .setSmallIcon(android.R.drawable.ic_lock_lock)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setOngoing(true)
-                .build();
     }
 
     @Override

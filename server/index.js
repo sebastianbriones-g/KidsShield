@@ -9,6 +9,7 @@ const os = require('os');
 const jwt = require('jsonwebtoken');
 const QRCode = require('qrcode');
 const db = require('./db');
+const mailer = require('./mailer');
 
 const app = express();
 const server = http.createServer(app);
@@ -31,6 +32,7 @@ app.use((req, res, next) => {
 
 // In-memory cache synced with Turso/LibSQL DB
 const devices = {};
+const unlinkedDevices = new Set();
 
 // Default device template (Sin datos ficticios: esperando telemetría real del teléfono móvil)
 function createDefaultDevice(id, name, childName, avatar = '📱') {
@@ -220,6 +222,107 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Forgot Password - Generates Recovery Token and Sends Email
+app.post('/api/auth/forgot-password', async (req, res) => {
+  let { email } = req.body;
+  email = email ? email.trim().toLowerCase() : '';
+
+  if (!email) {
+    return res.status(400).json({ error: 'Debes ingresar un correo electrónico válido.' });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: 'El formato del correo electrónico es inválido.' });
+  }
+
+  try {
+    const resetData = await db.createPasswordReset(email);
+
+    if (!resetData) {
+      // Por seguridad para evitar enumeración de correos, respondemos de forma neutral
+      console.log(`[Auth] ℹ️ Solicitud de recuperación para correo no registrado: ${email}`);
+      return res.json({
+        success: true,
+        message: 'Si la dirección de correo coincide con una cuenta activa, recibirás un enlace de recuperación en los próximos minutos.'
+      });
+    }
+
+    const host = req.get('host') || 'localhost:3000';
+    const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const resetUrl = `${protocol}://${host}/?reset_token=${resetData.token}`;
+
+    const mailResult = await mailer.sendPasswordResetEmail({
+      toEmail: email,
+      userName: resetData.user.name,
+      resetUrl
+    });
+
+    res.json({
+      success: true,
+      message: `Hemos enviado un correo a ${email} con el enlace de recuperación.`,
+      previewUrl: mailResult.previewUrl || null,
+      resetUrl: process.env.NODE_ENV !== 'production' ? resetUrl : undefined
+    });
+  } catch (err) {
+    console.error('[Auth] Error enviando correo de recuperación:', err);
+    res.status(500).json({ error: 'Error interno al enviar el correo de recuperación. Inténtalo nuevamente.' });
+  }
+});
+
+// Verify Password Reset Token
+app.get('/api/auth/verify-reset-token', async (req, res) => {
+  const { token } = req.query;
+  if (!token) {
+    return res.status(400).json({ valid: false, error: 'Token no proporcionado.' });
+  }
+
+  try {
+    const result = await db.verifyPasswordResetToken(token);
+    if (!result.valid) {
+      return res.status(400).json({ valid: false, error: result.error });
+    }
+
+    res.json({
+      valid: true,
+      email: result.email,
+      userName: result.user ? result.user.name : 'Padre/Madre'
+    });
+  } catch (err) {
+    console.error('[Auth] Error verificando token de recuperación:', err);
+    res.status(500).json({ valid: false, error: 'Error interno al verificar el enlace.' });
+  }
+});
+
+// Reset Password with Verified Token
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { token, password } = req.body;
+
+  if (!token || !password) {
+    return res.status(400).json({ error: 'El enlace y la nueva contraseña son requeridos.' });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 8 caracteres.' });
+  }
+
+  try {
+    const result = await db.resetPasswordWithToken(token, password);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({
+      success: true,
+      email: result.email,
+      message: '¡Tu contraseña ha sido restablecida con éxito! Ya puedes iniciar sesión con tu nueva contraseña.'
+    });
+  } catch (err) {
+    console.error('[Auth] Error restableciendo contraseña:', err);
+    res.status(500).json({ error: 'Error interno al actualizar la contraseña.' });
+  }
+});
+
 // Get Auth Config (Google Client ID status)
 app.get('/api/auth/config', (req, res) => {
   const gId = process.env.GOOGLE_CLIENT_ID || '';
@@ -284,15 +387,21 @@ async function verifyGoogleCredential(credential) {
   // Fallback signature/format check for JWT
   const parts = credential.split('.');
   if (parts.length === 3) {
-    const payloadJson = Buffer.from(parts[1], 'base64').toString('utf8');
-    const payload = JSON.parse(payloadJson);
-    if (payload.email) {
-      return {
-        email: payload.email,
-        name: payload.name || 'Padre de Familia',
-        picture: payload.picture || '',
-        sub: payload.sub
-      };
+    try {
+      let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      const payloadJson = Buffer.from(b64, 'base64').toString('utf8');
+      const payload = JSON.parse(payloadJson);
+      if (payload.email) {
+        return {
+          email: payload.email,
+          name: payload.name || payload.given_name || 'Padre de Familia',
+          picture: payload.picture || '',
+          sub: payload.sub
+        };
+      }
+    } catch (e) {
+      console.warn('[Auth] Error parseando payload JWT:', e.message);
     }
   }
 
@@ -311,7 +420,7 @@ app.post('/api/auth/google', async (req, res) => {
 
     if (!user) {
       isNewRegistration = true;
-      // Auto-register family for Google User (supports registration and login)
+      // Auto-register family for Google User using real data rescued from Google
       const newParent = await db.registerParent({
         email: googleUser.email,
         name: googleUser.name || 'Padre de Familia',
@@ -326,8 +435,13 @@ app.post('/api/auth/google', async (req, res) => {
         avatar: newParent.avatar,
         role: 'owner'
       };
-      console.log(`[Auth] 🆕 Familia registrada automáticamente con Google: ${googleUser.email} (${newParent.familyId})`);
+      console.log(`[Auth] 🆕 Familia registrada automáticamente con datos reales de Google: ${googleUser.email} (${newParent.familyId})`);
     } else {
+      // Si el usuario ya existía, vincular su Google ID y foto oficial rescatada de Google
+      if (db.linkGoogleToUser && (!user.google_id || user.avatar === '👨‍💼')) {
+        await db.linkGoogleToUser(user.id, googleUser.sub, googleUser.picture);
+        user.avatar = googleUser.picture || user.avatar;
+      }
       console.log(`[Auth] ✅ Sesión iniciada con Google en Turso: ${googleUser.email} (Familia: ${user.family_id})`);
     }
 
@@ -505,6 +619,7 @@ app.post('/api/devices', async (req, res) => {
 
   const newDevice = createDefaultDevice(id, name || `Teléfono ${count}`, childName || `Hijo ${count}`, avatar || '📱');
   newDevice.familyId = familyId;
+  unlinkedDevices.delete(id);
   devices[id] = newDevice;
   await db.saveDevice(newDevice);
 
@@ -513,21 +628,30 @@ app.post('/api/devices', async (req, res) => {
   res.json({ success: true, device: newDevice });
 });
 
-// Delete device profile
+// Delete / Unlink device profile
 app.delete('/api/devices/:id', async (req, res) => {
   const { id } = req.params;
   if (!devices[id]) return res.status(404).json({ error: 'Dispositivo no encontrado' });
 
+  const devName = devices[id].name || id;
+  unlinkedDevices.add(id);
   delete devices[id];
+
   try {
     await db.client.execute({ sql: 'DELETE FROM devices WHERE id = ?', args: [id] });
+    await db.client.execute({ sql: 'DELETE FROM location_history WHERE device_id = ?', args: [id] }).catch(() => {});
+    await db.client.execute({ sql: 'DELETE FROM video_clips WHERE device_id = ?', args: [id] }).catch(() => {});
+    await db.client.execute({ sql: 'DELETE FROM audio_clips WHERE device_id = ?', args: [id] }).catch(() => {});
+    await db.client.execute({ sql: 'DELETE FROM geofences WHERE device_id = ?', args: [id] }).catch(() => {});
+    await db.client.execute({ sql: 'DELETE FROM activity_logs WHERE device_id = ?', args: [id] }).catch(() => {});
   } catch (e) {
     console.error('Error borrando de BD:', e);
   }
 
-  console.log(`[Devices] 🗑️ Dispositivo eliminado: ${id}`);
-  broadcast('DEVICE_DELETED', { id });
-  res.json({ success: true });
+  console.log(`[Devices] 🗑️ Dispositivo desvinculado y liberado: ${id} (${devName})`);
+  broadcast('DEVICE_DELETED', { id, name: devName, unlinked: true });
+  broadcast('DEVICE_UNLINKED', { id, name: devName, unlinked: true });
+  res.json({ success: true, message: `Dispositivo ${devName} desvinculado y liberado correctamente` });
 });
 
 // Get specific device status
@@ -666,6 +790,8 @@ app.post('/api/devices/:id/config', async (req, res) => {
   if (bedtimeStart) device.bedtimeStart = bedtimeStart;
   if (bedtimeEnd) device.bedtimeEnd = bedtimeEnd;
   if (parentPin) device.parentPin = parentPin;
+  if (typeof req.body.isLivePaused === 'boolean') device.isLivePaused = req.body.isLivePaused;
+  if (typeof req.body.autoScreenshotEnabled === 'boolean') device.autoScreenshotEnabled = req.body.autoScreenshotEnabled;
 
   if (Array.isArray(blockedApps)) {
     device.blockedApps = blockedApps;
@@ -1009,6 +1135,10 @@ app.get('/api/devices/:id/location-history', async (req, res) => {
 
 // Real-time Event from Child Phone (Saved to Turso Cloud)
 app.post('/api/devices/:id/event', async (req, res) => {
+  if (unlinkedDevices.has(req.params.id)) {
+    return res.json({ success: true, unlinked: true });
+  }
+
   const device = devices[req.params.id];
   if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
 
@@ -1031,13 +1161,21 @@ app.post('/api/devices/:id/event', async (req, res) => {
   } else if (type === 'app_limit_exceeded') {
     eventMessage = `⌛ Límite diario de ${appName || pkg} agotado`;
     eventType = 'alert';
+  } else if (type === 'gps_alert') {
+    eventMessage = `📍 Alerta GPS: ${message || 'Intento de desactivar ubicación detectado'}`;
+    eventType = 'alert';
   }
 
-  device.activityLog.unshift({
+  const logEntry = {
     time: timeStr,
     type: eventType,
-    message: eventMessage
-  });
+    message: eventMessage,
+    package: pkg || '',
+    appName: appName || (pkg ? pkg.split('.').pop() : 'KidsShield'),
+    timestamp: Date.now()
+  };
+
+  device.activityLog.unshift(logEntry);
 
   // Guardar persistentemente en Turso Cloud
   await db.logActivity(device.id, timeStr, eventType, eventMessage, device.familyId || 'FAM-DEFAULT-01');
@@ -1047,7 +1185,9 @@ app.post('/api/devices/:id/event', async (req, res) => {
     title: `KidsShield: ${device.name}`,
     body: eventMessage,
     type: eventType,
-    time: timeStr
+    time: timeStr,
+    package: pkg || '',
+    appName: logEntry.appName
   });
 
   broadcast('DEVICE_UPDATED', device);
@@ -1065,6 +1205,23 @@ app.get('/api/devices/:id/activity-logs', async (req, res) => {
 // ----------------------------------------------------------------
 app.post('/api/devices/:id/report', async (req, res) => {
   const deviceId = req.params.id;
+
+  // Si el dispositivo fue desvinculado por los padres, responder con la orden de liberación y NO recrearlo
+  if (unlinkedDevices.has(deviceId)) {
+    console.log(`[Devices] 🔓 Dispositivo desvinculado ${deviceId} reportando. Enviando orden de liberación y desbloqueo total.`);
+    return res.json({
+      unlinked: true,
+      isLocked: false,
+      lockReason: '',
+      dailyLimitMinutes: 1440,
+      bedtimeEnabled: false,
+      blockedApps: [],
+      appLimits: {},
+      parentPin: '1234',
+      pendingCommands: ['UNLINK_DEVICE', 'UNLOCK_DEVICE']
+    });
+  }
+
   if (!devices[deviceId]) {
     devices[deviceId] = createDefaultDevice(deviceId, req.body.deviceName, req.body.childName);
     await db.saveDevice(devices[deviceId]);
@@ -1157,6 +1314,9 @@ app.post('/api/devices/:id/report', async (req, res) => {
       const existing = device.appCatalog.find(a => a.package === incomingApp.package);
       if (existing) {
         existing.timeTodayMinutes = incomingApp.timeTodayMinutes;
+        if (incomingApp.category) existing.category = incomingApp.category;
+        if (incomingApp.name) existing.name = incomingApp.name;
+        if (incomingApp.icon) existing.icon = incomingApp.icon;
       } else {
         device.appCatalog.push(incomingApp);
       }
@@ -1193,9 +1353,11 @@ app.post('/api/devices/:id/report', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
+  const bestIp = getBestServerIp();
   console.log(`====================================================`);
   console.log(`🛡️ SERVIDOR DE CONTROL PARENTAL INICIADO`);
-  console.log(`🌐 Panel de Padres: http://localhost:${PORT}`);
-  console.log(`📱 Endpoint APK Android: http://localhost:${PORT}/api/devices/KID-PHONE-01`);
+  console.log(`🌐 Panel Local:          http://localhost:${PORT}`);
+  console.log(`🌐 Panel en Tailscale:    http://${bestIp}:${PORT} (o http://note:${PORT})`);
+  console.log(`📱 Endpoint APK Android: http://${bestIp}:${PORT}/api/devices/KID-PHONE-01`);
   console.log(`====================================================`);
 });

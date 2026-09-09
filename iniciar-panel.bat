@@ -4,7 +4,8 @@ echo ================================================================
 echo   KidsShield - Sistema de Control Parental y Proteccion Digital
 echo ================================================================
 echo.
-echo Iniciando el servidor backend en http://localhost:3000...
+echo Panel Local:          http://localhost:3000
+echo Panel en Tailscale:    http://100.74.204.90:3000 (o http://note:3000)
 echo.
 
 cd /d "%~dp0server"
@@ -19,7 +20,7 @@ if not exist "node_modules\" (
     )
 )
 
-echo Iniciando el servidor backend en http://localhost:3000...
+echo Iniciando servidor en 0.0.0.0:3000 (accesible via Tailscale)...
 echo.
 start http://localhost:3000
 node index.js

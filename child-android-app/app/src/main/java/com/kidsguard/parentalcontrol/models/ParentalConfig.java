@@ -179,4 +179,34 @@ public class ParentalConfig {
             return false;
         }
     }
+
+    public boolean isLivePaused() {
+        return prefs.getBoolean("is_live_paused", false);
+    }
+
+    public void setLivePaused(boolean paused) {
+        prefs.edit().putBoolean("is_live_paused", paused).apply();
+    }
+
+    public boolean isAutoScreenshotEnabled() {
+        return prefs.getBoolean("auto_screenshot_enabled", false);
+    }
+
+    public void setAutoScreenshotEnabled(boolean enabled) {
+        prefs.edit().putBoolean("auto_screenshot_enabled", enabled).apply();
+    }
+
+    public void releaseAndUnlink() {
+        prefs.edit()
+            .putBoolean("is_locked", false)
+            .putString("lock_reason", "")
+            .putBoolean("protection_active", false)
+            .putInt("daily_limit_minutes", 1440)
+            .putBoolean("bedtime_enabled", false)
+            .putStringSet("blocked_apps", new HashSet<String>())
+            .putString("app_limits", "{}")
+            .putLong("admin_bypass_until", System.currentTimeMillis() + 86400000L)
+            .apply();
+    }
 }
+
