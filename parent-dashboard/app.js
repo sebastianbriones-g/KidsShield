@@ -1,3 +1,16 @@
+
+// Safe event listener helper to prevent crashes if DOM elements are missing
+function safeAddEvent(target, event, handler) {
+  try {
+    const el = (typeof target === 'string') ? document.getElementById(target) : target;
+    if (el && typeof el.addEventListener === 'function') {
+      el.addEventListener(event, handler);
+    }
+  } catch (err) {
+    console.warn('[SafeListener] Warning attaching event to:', target, err);
+  }
+}
+
 // KidsShield - Parent Dashboard Application Logic
 
 let devicesList = [];
@@ -191,15 +204,19 @@ let currentSubscription = { plan: 'pro', maxDevices: 5, status: 'active' };
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
-  setupWebSocket();
-  bindEvents();
-  await initAdminAuth();
-  await initGoogleAuth();
-  await loadSubscriptionInfo();
-  await loadDevicesList();
-  await checkUrlResetToken();
-  renderAll();
-  startClock();
+  try {
+    setupWebSocket();
+    try { bindEvents(); } catch (e) { console.error('[Init] Error in bindEvents:', e); }
+    try { await initAdminAuth(); } catch (e) { console.error('[Init] Error in initAdminAuth:', e); }
+    try { await initGoogleAuth(); } catch (e) { console.error('[Init] Error in initGoogleAuth:', e); }
+    try { await loadSubscriptionInfo(); } catch (e) { console.error('[Init] Error in loadSubscriptionInfo:', e); }
+    try { await loadDevicesList(); } catch (e) { console.error('[Init] Error in loadDevicesList:', e); }
+    try { await checkUrlResetToken(); } catch (e) { console.error('[Init] Error in checkUrlResetToken:', e); }
+    try { renderAll(); } catch (e) { console.error('[Init] Error in renderAll:', e); }
+    startClock();
+  } catch (globalInitErr) {
+    console.error('[Init] Fatal startup error caught:', globalInitErr);
+  }
 });
 
 // Format minutes into "Xh Ym"
@@ -1062,6 +1079,7 @@ function startClock() {
 
 // Event Bindings
 function bindEvents() {
+  try {
   // Multi-Page Navigation Tabs & Buttons
   const brandLogoBtn = document.getElementById('brandLogoBtn');
   if (brandLogoBtn) brandLogoBtn.addEventListener('click', () => switchView('portal'));
@@ -1315,7 +1333,11 @@ function bindEvents() {
   if (btnConfirmUnlinkDevice) btnConfirmUnlinkDevice.addEventListener('click', confirmUnlinkDevice);
 
   // Master Lock
-  btnMasterLock.addEventListener('click', () => {
+  if (btnMasterLock) btnMasterLock.addEventListener('click', () => {
+    if (!currentDevice) {
+      showToast('No hay ningún dispositivo seleccionado', 'warning');
+      return;
+    }
     const newLockState = !currentDevice.isLocked;
     updateRemoteConfig({
       isLocked: newLockState,
@@ -1325,7 +1347,8 @@ function bindEvents() {
   });
 
   // Quick block active app
-  btnQuickBlockActiveApp.addEventListener('click', () => {
+  if (btnQuickBlockActiveApp) btnQuickBlockActiveApp.addEventListener('click', () => {
+    if (!currentDevice || !currentDevice.appCatalog) return;
     const activeApp = currentDevice.appCatalog.find(a => a.package === currentDevice.currentActiveApp);
     if (activeApp) {
       toggleAppBlock(activeApp.package, !activeApp.isBlocked);
@@ -1333,32 +1356,33 @@ function bindEvents() {
   });
 
   // Bonus time
-  btnAddBonusTime.addEventListener('click', () => {
+  if (btnAddBonusTime) btnAddBonusTime.addEventListener('click', () => {
+    if (!currentDevice) return;
     const newLimit = currentDevice.dailyLimitMinutes + 15;
     updateRemoteConfig({ dailyLimitMinutes: newLimit });
     showToast('Se otorgaron +15 minutos de tiempo de pantalla extra', 'success');
   });
 
   // Range slider
-  dailyLimitRange.addEventListener('input', (e) => {
+  if (dailyLimitRange) dailyLimitRange.addEventListener('input', (e) => {
     const mins = parseInt(e.target.value, 10);
     dailyLimitValText.textContent = formatMinutes(mins);
   });
 
-  dailyLimitRange.addEventListener('change', (e) => {
+  if (dailyLimitRange) dailyLimitRange.addEventListener('change', (e) => {
     const mins = parseInt(e.target.value, 10);
     updateRemoteConfig({ dailyLimitMinutes: mins });
     showToast(`Nuevo límite diario: ${formatMinutes(mins)}`, 'success');
   });
 
   // Bedtime toggle
-  toggleBedtime.addEventListener('change', (e) => {
+  if (toggleBedtime) toggleBedtime.addEventListener('change', (e) => {
     updateRemoteConfig({ bedtimeEnabled: e.target.checked });
     showToast(e.target.checked ? 'Modo noche activado' : 'Modo noche desactivado', 'info');
   });
 
   // Save Schedule
-  btnSaveSchedule.addEventListener('click', () => {
+  if (btnSaveSchedule) btnSaveSchedule.addEventListener('click', () => {
     updateRemoteConfig({
       bedtimeStart: bedtimeStartInput.value,
       bedtimeEnd: bedtimeEndInput.value
@@ -1367,7 +1391,7 @@ function bindEvents() {
   });
 
   // App Search
-  appSearchInput.addEventListener('input', (e) => {
+  if (appSearchInput) appSearchInput.addEventListener('input', (e) => {
     searchQuery = e.target.value;
     renderAppList();
   });
@@ -1383,7 +1407,7 @@ function bindEvents() {
   });
 
   // Simulator unlock with PIN
-  btnSimUnlockPin.addEventListener('click', () => {
+  if (btnSimUnlockPin) btnSimUnlockPin.addEventListener('click', () => {
     const entered = simPinInput.value.trim();
     if (entered === currentDevice.parentPin) {
       updateRemoteConfig({ isLocked: false });
@@ -1464,16 +1488,18 @@ function bindEvents() {
   }
 
   // Modals & Navigation
-  btnShowSetupSteps.addEventListener('click', () => setupModal.classList.add('active'));
-  btnCloseSetupModal.addEventListener('click', () => setupModal.classList.remove('active'));
-  btnConfirmSteps.addEventListener('click', () => setupModal.classList.remove('active'));
+  if (btnShowSetupSteps && setupModal) btnShowSetupSteps.addEventListener('click', () => setupModal.classList.add('active'));
+  if (btnCloseSetupModal && setupModal) btnCloseSetupModal.addEventListener('click', () => setupModal.classList.remove('active'));
+  if (btnConfirmSteps && setupModal) btnConfirmSteps.addEventListener('click', () => setupModal.classList.remove('active'));
 
-  btnOpenPinModal.addEventListener('click', () => {
-    newPinInput.value = currentDevice.parentPin;
-    pinModal.classList.add('active');
-  });
-  btnClosePinModal.addEventListener('click', () => pinModal.classList.remove('active'));
-  btnCancelPinModal.addEventListener('click', () => pinModal.classList.remove('active'));
+  if (btnOpenPinModal && pinModal) {
+    btnOpenPinModal.addEventListener('click', () => {
+      if (newPinInput) newPinInput.value = (currentDevice && currentDevice.parentPin) ? currentDevice.parentPin : '1234';
+      pinModal.classList.add('active');
+    });
+  }
+  if (btnClosePinModal && pinModal) btnClosePinModal.addEventListener('click', () => pinModal.classList.remove('active'));
+  if (btnCancelPinModal && pinModal) btnCancelPinModal.addEventListener('click', () => pinModal.classList.remove('active'));
   btnSavePin.addEventListener('click', () => {
     const val = newPinInput.value.trim();
     if (val.length === 4 && /^\d+$/.test(val)) {
@@ -1659,6 +1685,9 @@ function bindEvents() {
   const btnSaveGoogleClientIdModal = document.getElementById('btnSaveGoogleClientIdModal');
   if (btnSaveGoogleClientIdModal) {
     btnSaveGoogleClientIdModal.addEventListener('click', saveGoogleClientIdFromModal);
+  }
+  } catch (bindErr) {
+    console.error('[Events] Error in bindEvents:', bindErr);
   }
 }
 

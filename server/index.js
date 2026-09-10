@@ -1352,6 +1352,15 @@ app.post('/api/devices/:id/report', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n❌ [AVISO] El puerto ${PORT} ya está ocupado por otra instancia de KidsShield o Node.js.`);
+    console.error('💡 Para reiniciarlo limpiamente, cierra la otra ventana o ejecuta iniciar-panel.bat.\n');
+  } else {
+    console.error('❌ Error en el servidor:', err);
+  }
+});
+
 server.listen(PORT, '0.0.0.0', () => {
   const bestIp = getBestServerIp();
   console.log(`====================================================`);

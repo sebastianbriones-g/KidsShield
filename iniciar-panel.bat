@@ -4,23 +4,23 @@ echo ================================================================
 echo   KidsShield - Sistema de Control Parental y Proteccion Digital
 echo ================================================================
 echo.
-echo Panel Local:          http://localhost:3000
-echo Panel en Tailscale:    http://100.74.204.90:3000 (o http://note:3000)
-echo.
+
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr :3000 ^| findstr LISTENING') do (
+    echo [KidsShield] Liberando puerto 3000 ocupado por proceso PID %%a
+    taskkill /F /PID %%a >nul 2>&1
+)
 
 cd /d "%~dp0server"
 
-if not exist "node_modules\" (
-    echo [KidsShield] Instalando dependencias necesarias con npm...
+if not exist node_modules (
+    echo [KidsShield] Instalando dependencias de Node.js con npm...
     call npm install
-    if errorlevel 1 (
-        echo [ERROR] Hubo un problema instalando las dependencias.
-        pause
-        exit /b 1
-    )
 )
 
-echo Iniciando servidor en 0.0.0.0:3000 (accesible via Tailscale)...
+echo.
+echo ================================================================
+echo   Iniciando KidsShield en http://localhost:3000
+echo ================================================================
 echo.
 start http://localhost:3000
 node index.js
