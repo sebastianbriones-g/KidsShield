@@ -31,7 +31,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginVertical="16dp"
-            android:background="#1E293B" />
+            android:background="@drawable/bg_edittext" />
 
         <!-- Permissions Title & Assistant Header -->
         <LinearLayout
@@ -79,7 +79,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:background="#121826"
+            android:background="@drawable/bg_card_dark"
             android:orientation="vertical"
             android:padding="14dp">
 
@@ -115,7 +115,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:background="#121826"
+            android:background="@drawable/bg_card_dark"
             android:orientation="vertical"
             android:padding="14dp">
 
@@ -151,7 +151,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:background="#121826"
+            android:background="@drawable/bg_card_dark"
             android:orientation="vertical"
             android:padding="14dp">
 
@@ -187,7 +187,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:background="#121826"
+            android:background="@drawable/bg_card_dark"
             android:orientation="vertical"
             android:padding="14dp">
 
@@ -223,7 +223,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:background="#121826"
+            android:background="@drawable/bg_card_dark"
             android:orientation="vertical"
             android:padding="14dp">
 
@@ -259,7 +259,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:background="#121826"
+            android:background="@drawable/bg_card_dark"
             android:orientation="vertical"
             android:padding="14dp">
 
@@ -294,7 +294,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginVertical="16dp"
-            android:background="#1E293B" />
+            android:background="@drawable/bg_edittext" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -328,10 +328,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:background="#1E293B"
-            android:hint="URL del Servidor (ej: http://100.74.204.90:3000)"
+            android:background="@drawable/bg_edittext"
+            android:hint="URL del Servidor (ej: http://100.86.86.94:3000)"
             android:padding="12dp"
-            android:text="http://100.74.204.90:3000"
+            android:text="http://100.86.86.94:3000"
             android:textColor="#FFFFFF"
             android:textColorHint="#64748B"
             android:textSize="14sp" />
@@ -341,7 +341,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:background="#1E293B"
+            android:background="@drawable/bg_edittext"
             android:hint="Código del Dispositivo"
             android:padding="12dp"
             android:text="KID-PHONE-01"
@@ -365,7 +365,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginVertical="16dp"
-            android:background="#1E293B" />
+            android:background="@drawable/bg_edittext" />
 
         <Button
             android:id="@+id/btnUninstallApp"

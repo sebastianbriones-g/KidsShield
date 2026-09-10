@@ -16,7 +16,7 @@
         <TextView
             android:layout_width="80dp"
             android:layout_height="80dp"
-            android:background="#261019"
+            android:background="@drawable/bg_lock_badge"
             android:gravity="center"
             android:text="🔒"
             android:textSize="40sp" />
@@ -46,7 +46,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="28dp"
-            android:background="#121826"
+            android:background="@drawable/bg_card_dark"
             android:orientation="vertical"
             android:padding="16dp">
 
@@ -69,7 +69,7 @@
                     android:layout_width="0dp"
                     android:layout_height="48dp"
                     android:layout_weight="1"
-                    android:background="#1E293B"
+                    android:background="@drawable/bg_pin_edittext"
                     android:gravity="center"
                     android:hint="PIN (4 dígitos)"
                     android:inputType="numberPassword"

@@ -3200,3 +3200,126 @@ body {
 .btn-toggle-eye:hover {
   color: #fff;
 }
+
+
+/* ==========================================================================
+   Comprehensive Form Control Styling (Inputs, Selects, Labels, Modals)
+   ========================================================================== */
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+.input-group label,
+.modal-body label {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  letter-spacing: 0.01em;
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Universal text & password inputs in modals and cards */
+.text-input-field,
+.modal-body input[type="text"],
+.modal-body input[type="password"],
+.modal-body input[type="email"],
+.modal-body input[type="number"],
+.input-group input,
+.input-group select,
+.input-group textarea {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.text-input-field:hover,
+.modal-body input[type="text"]:hover,
+.modal-body input[type="password"]:hover,
+.modal-body input[type="email"]:hover,
+.input-group input:hover,
+.input-group select:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.text-input-field:focus,
+.modal-body input[type="text"]:focus,
+.modal-body input[type="password"]:focus,
+.modal-body input[type="email"]:focus,
+.input-group input:focus,
+.input-group select:focus {
+  outline: none;
+  border-color: #6366f1;
+  background: #0f172a;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35);
+}
+
+/* Specific PIN Input Field in Modals (Large, centered, modern security design) */
+.pin-input-field {
+  width: 100%;
+  max-width: 240px;
+  margin: 8px auto 0 auto;
+  display: block;
+  background: rgba(15, 23, 42, 0.9);
+  border: 2px solid rgba(99, 102, 241, 0.4);
+  border-radius: var(--radius-lg);
+  padding: 14px 18px;
+  color: #38bdf8;
+  font-family: var(--font-heading), monospace;
+  font-size: 1.6rem;
+  letter-spacing: 12px;
+  text-align: center;
+  font-weight: 800;
+  transition: all 0.25s ease;
+  box-sizing: border-box;
+}
+
+.pin-input-field:focus {
+  outline: none;
+  border-color: #38bdf8;
+  background: #0b1329;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.4);
+}
+
+/* Simulator PIN Input Styling */
+#simPinInput {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  text-align: center;
+  letter-spacing: 4px;
+}
+
+#simPinInput:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+}
+
+/* Modal notes and helper texts */
+.modal-note {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--primary);
+}
