@@ -119,15 +119,22 @@ public class SyncClient {
                         }
 
                         // Update local policies based on parent server instructions
+                        if (resJson.has("lockReason")) {
+                            config.setLockReason(resJson.getString("lockReason"));
+                        }
                         if (resJson.has("isLocked")) {
                             boolean locked = resJson.getBoolean("isLocked");
                             config.setDeviceLocked(locked);
                             if (!locked) {
                                 com.kidsguard.parentalcontrol.ui.LockOverlayActivity.dismissIfOpen();
+                            } else {
+                                String reason = resJson.optString("lockReason", config.getLockReason());
+                                if (reason == null || reason.isEmpty()) reason = "Dispositivo bloqueado por control parental.";
+                                Intent lockIntent = new Intent(context, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
+                                lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                                lockIntent.putExtra("reason", reason);
+                                context.startActivity(lockIntent);
                             }
-                        }
-                        if (resJson.has("lockReason")) {
-                            config.setLockReason(resJson.getString("lockReason"));
                         }
                         if (resJson.has("dailyLimitMinutes")) {
                             config.setDailyLimitMinutes(resJson.getInt("dailyLimitMinutes"));

@@ -329,9 +329,9 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:background="@drawable/bg_edittext"
-            android:hint="URL del Servidor (ej: http://100.86.86.94:3000)"
+            android:hint="URL del Servidor (ej: http://100.74.204.90:3000)"
             android:padding="12dp"
-            android:text="http://100.86.86.94:3000"
+            android:text="http://100.74.204.90:3000"
             android:textColor="#FFFFFF"
             android:textColorHint="#64748B"
             android:textSize="14sp" />

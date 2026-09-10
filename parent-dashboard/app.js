@@ -47,6 +47,21 @@ let currentVideoClip = {
 let adminUser = null;
 let adminAuthToken = localStorage.getItem('kidsshield_admin_token') || null;
 
+// Authenticated fetch wrapper for administrative requests
+async function apiFetch(url, options = {}) {
+  options.headers = options.headers || {};
+  if (adminAuthToken) {
+    if (options.headers instanceof Headers) {
+      if (!options.headers.has('Authorization')) options.headers.set('Authorization', `Bearer ${adminAuthToken}`);
+    } else if (Array.isArray(options.headers)) {
+      options.headers.push(['Authorization', `Bearer ${adminAuthToken}`]);
+    } else {
+      if (!options.headers['Authorization']) options.headers['Authorization'] = `Bearer ${adminAuthToken}`;
+    }
+  }
+  return fetch(url, options);
+}
+
 // DOM Elements
 const currentDeviceName = document.getElementById('currentDeviceName');
 const batteryStatus = document.getElementById('batteryStatus');
@@ -392,10 +407,16 @@ function renderHeader() {
     if (batteryStatus) batteryStatus.textContent = (currentDevice.battery !== null && currentDevice.battery !== undefined) ? `🔋 ${currentDevice.battery}%` : '🔋 --%';
     if (lastSeenStatus) lastSeenStatus.textContent = 'Conectado ahora';
   } else {
-    if (onlineIndicator) onlineIndicator.className = 'status-indicator offline';
-    if (onlineText) onlineText.textContent = 'Esperando conexión';
+    if (onlineIndicator) {
+      onlineIndicator.className = currentDevice.lastSeen ? 'status-indicator disconnected' : 'status-indicator offline';
+    }
+    if (onlineText) {
+      onlineText.textContent = currentDevice.lastSeen ? 'Desconectado (Conexión perdida)' : 'Esperando conexión';
+    }
     if (batteryStatus) batteryStatus.textContent = currentDevice.battery ? `🔋 ${currentDevice.battery}%` : '🔋 --%';
-    if (lastSeenStatus) lastSeenStatus.textContent = currentDevice.lastSeen ? `Última vez: ${new Date(currentDevice.lastSeen).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : 'Sin sincronizar aún';
+    if (lastSeenStatus) {
+      lastSeenStatus.textContent = currentDevice.lastSeen ? `Última conexión: ${new Date(currentDevice.lastSeen).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : 'Sin sincronizar aún';
+    }
   }
 
   if (headerPinDisplay) headerPinDisplay.textContent = currentDevice.parentPin;
@@ -926,26 +947,105 @@ function toggleLiveScreenshotPause() {
 }
 
 function renderLivePauseState() {
-  const btn = document.getElementById('btnToggleLivePause');
-  const icon = document.getElementById('livePauseBtnIcon');
-  const text = document.getElementById('livePauseBtnText');
+  const btn = document.getElementById('btnTogglePauseLive') || document.getElementById('btnToggleLivePause');
+  const icon = document.getElementById('btnPauseLiveIcon') || document.getElementById('livePauseBtnIcon');
+  const text = document.getElementById('btnPauseLiveText') || document.getElementById('livePauseBtnText');
   const overlay = document.getElementById('livePausedOverlay');
 
   if (isLivePaused) {
     if (btn) {
-      btn.className = 'btn-live-toggle btn-paused';
+      btn.className = 'btn btn-sm btn-outline btn-paused';
+      btn.style.background = 'rgba(239, 68, 68, 0.2)';
+      btn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+      btn.style.color = '#fca5a5';
     }
     if (icon) icon.textContent = '▶️';
-    if (text) text.textContent = 'Reanudar Capturas';
+    if (text) text.textContent = 'Reanudar';
     if (overlay) overlay.style.display = 'flex';
   } else {
     if (btn) {
-      btn.className = 'btn-live-toggle btn-running';
+      btn.className = 'btn btn-sm btn-outline';
+      btn.style.background = '';
+      btn.style.borderColor = '';
+      btn.style.color = '';
     }
     if (icon) icon.textContent = '⏸️';
-    if (text) text.textContent = 'Pausar Capturas';
+    if (text) text.textContent = 'Pausar';
     if (overlay) overlay.style.display = 'none';
   }
+}
+
+// Global Dashboard Modular Navigation
+let currentDashboardView = 'overview';
+
+function switchDashboardView(viewId, targetAnchorId = null) {
+  currentDashboardView = viewId;
+
+  // Si estábamos en el portal, cambiar a la vista de monitoreo
+  if (currentView !== 'monitoring') {
+    switchView('monitoring');
+  }
+
+  // Actualizar estado activo en botones de tabs del header y drawer
+  const allNavButtons = document.querySelectorAll('.desktop-nav-tabs .nav-tab-btn, .drawer-nav .drawer-nav-item');
+  allNavButtons.forEach(btn => {
+    if (btn.dataset.view === viewId) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
+  // Ocultar todas las pestañas modulares
+  const tabViews = document.querySelectorAll('.monitoring-tab-view');
+  tabViews.forEach(view => {
+    view.classList.add('hidden');
+    view.style.display = 'none';
+  });
+
+  const activeViewMap = {
+    overview: 'tabViewOverview',
+    family: 'tabViewFamily',
+    plan: 'tabViewPlan',
+    devices: 'tabViewDevices',
+    map: 'tabViewMap',
+    multimedia: 'tabViewMultimedia',
+    history: 'tabViewHistory',
+    settings: 'tabViewSettings'
+  };
+
+  const targetElemId = activeViewMap[viewId] || 'tabViewOverview';
+  const targetElem = document.getElementById(targetElemId);
+  if (targetElem) {
+    targetElem.classList.remove('hidden');
+    targetElem.style.display = 'block';
+  }
+
+  // Disparar renderizados específicos según la vista seleccionada
+  if (viewId === 'family') {
+    renderFamilyTab();
+  } else if (viewId === 'devices') {
+    renderDevicesTab();
+  } else if (viewId === 'map') {
+    initDedicatedMap();
+  } else if (viewId === 'multimedia') {
+    fetchAndRenderMultimediaGallery();
+  } else if (viewId === 'history') {
+    renderHistoryTab();
+  } else if (viewId === 'settings') {
+    renderSettingsTab();
+  } else if (viewId === 'overview') {
+    if (targetAnchorId) {
+      setTimeout(() => {
+        const el = document.getElementById(targetAnchorId);
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  closeMobileDrawer();
 }
 
 // Multi-Page View Navigation (Page 1: Portal vs Page 2: Monitoring)
@@ -1044,7 +1144,7 @@ async function confirmUnlinkDevice() {
   if (!currentDevice) return;
   const devId = currentDevice.id;
   try {
-    const res = await fetch(`/api/devices/${devId}`, { method: 'DELETE' });
+    const res = await apiFetch(`/api/devices/${devId}`, { method: 'DELETE' });
     if (res.ok) {
       showToast(`Dispositivo ${devId} desvinculado con éxito`, 'warning');
       closeUnlinkDeviceModal();
@@ -1077,27 +1177,548 @@ function startClock() {
   setInterval(updateTime, 30000);
 }
 
+// ----------------------------------------------------------------
+// Tab 2: Mi Familia
+// ----------------------------------------------------------------
+function renderFamilyTab() {
+  const familyIdDisplay = document.getElementById('familyIdDisplay');
+  const familyOwnerName = document.getElementById('familyOwnerName');
+  const familyOwnerEmail = document.getElementById('familyOwnerEmail');
+  const familyDevicesUsageText = document.getElementById('familyDevicesUsageText');
+  const familyPlanBadge = document.getElementById('familyPlanBadge');
+
+  const famId = (adminUser && adminUser.familyId) || 'FAM-DEFAULT-01';
+  if (familyIdDisplay) familyIdDisplay.textContent = famId;
+  if (familyOwnerName) familyOwnerName.textContent = (adminUser && adminUser.name) || 'Administrador Familiar';
+  if (familyOwnerEmail) familyOwnerEmail.textContent = (adminUser && adminUser.email) || 'contacto@familia.local';
+
+  const maxDevs = (familySubscription && familySubscription.maxDevices) || 5;
+  const count = devicesList.length;
+  if (familyDevicesUsageText) familyDevicesUsageText.textContent = `${count} / ${maxDevs} permitidos`;
+
+  const planName = (familySubscription && familySubscription.plan) ? (familySubscription.plan === 'free' ? 'Plan Gratuito' : familySubscription.plan === 'family_total' ? 'Familia Total VIP 👑' : 'Familiar Pro ⚡') : 'Familiar Pro ⚡';
+  if (familyPlanBadge) familyPlanBadge.textContent = planName;
+}
+
+// ----------------------------------------------------------------
+// Tab 4: Dispositivos (Agregar y Configurar)
+// ----------------------------------------------------------------
+function renderDevicesTab() {
+  const container = document.getElementById('devicesTabGrid');
+  if (!container) return;
+
+  if (!devicesList || devicesList.length === 0) {
+    container.innerHTML = `
+      <div style="grid-column: 1/-1; text-align: center; padding: 40px 20px; background: rgba(255,255,255,0.02); border-radius: 14px; border: 1px dashed rgba(255,255,255,0.1);">
+        <div style="font-size: 2.5rem; margin-bottom: 10px;">📱</div>
+        <h4 style="color: #fff; margin: 0 0 6px 0;">No hay dispositivos vinculados</h4>
+        <p style="color: var(--text-muted); font-size: 0.85rem; max-width: 400px; margin: 0 auto 16px auto;">
+          Instala KidsShield en el teléfono de tu hijo y escanea el código QR para comenzar a supervisar.
+        </p>
+        <button class="btn btn-primary btn-sm" onclick="openPairingQrModal()">🔗 Vincular Dispositivo con QR</button>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = devicesList.map(dev => {
+    const isSelected = currentDevice && currentDevice.id === dev.id;
+    const isOnline = Boolean(dev.isOnline);
+    const batt = typeof dev.battery === 'number' ? `${dev.battery}%` : '--%';
+    const lastSeen = dev.lastSeen ? new Date(dev.lastSeen).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'Sin reporte';
+
+    return `
+      <div class="device-card-box ${isSelected ? 'active-device-card' : ''}" style="background: ${isSelected ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.03)'}; border: 1px solid ${isSelected ? '#6366f1' : 'rgba(255,255,255,0.08)'}; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(99,102,241,0.2); display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
+              ${dev.avatar || '📱'}
+            </div>
+            <div>
+              <h4 style="color: #fff; margin: 0; font-size: 1.05rem;">${dev.name || 'Teléfono'}</h4>
+              <p style="color: #94a3b8; font-size: 0.8rem; margin: 2px 0 0 0;">${dev.childName || 'Hijo'} • <span style="font-family: monospace;">${dev.id}</span></p>
+            </div>
+          </div>
+          <span class="status-indicator ${isOnline ? 'online' : 'offline'}">
+            <span class="status-dot"></span> <span>${isOnline ? 'En Línea' : 'Desconectado'}</span>
+          </span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: #cbd5e1; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: 8px;">
+          <span>🔋 Batería: <strong>${batt}</strong></span>
+          <span>🕒 Último visto: <strong>${lastSeen}</strong></span>
+          <span>${dev.isLocked ? '🔒 Bloqueado' : '🟢 Libre'}</span>
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-top: 4px;">
+          <button class="btn ${isSelected ? 'btn-primary' : 'btn-secondary'} btn-sm" style="flex: 1;" onclick="selectAndGoOverview('${dev.id}')">
+            ${isSelected ? '✓ Supervisando Ahora' : '👁️ Supervisar'}
+          </button>
+          <button class="btn btn-secondary btn-sm" title="Configurar dispositivo" onclick="selectAndGoSettings('${dev.id}')">
+            ⚙️
+          </button>
+          <button class="btn btn-danger-outline btn-sm" title="Desvincular teléfono" onclick="openUnlinkDeviceModal()">
+            🗑️
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function selectAndGoOverview(devId) {
+  onDeviceSelected(devId);
+  switchDashboardView('overview');
+}
+
+function selectAndGoSettings(devId) {
+  onDeviceSelected(devId);
+  switchDashboardView('settings');
+}
+
+// ----------------------------------------------------------------
+// Tab 5: Mapa Dedicado y Desactivación Remota de GPS
+// ----------------------------------------------------------------
+function initDedicatedMap() {
+  const mapContainer = document.getElementById('mapLeafletDedicated');
+  const toggleGps = document.getElementById('toggleGpsTrackingRemote');
+  const labelToggle = document.getElementById('labelGpsRemoteToggle');
+  const selectFreq = document.getElementById('selectGpsFrequency');
+  const addressEl = document.getElementById('mapDedicatedAddressText');
+  const lastUpdateEl = document.getElementById('mapDedicatedLastUpdate');
+
+  if (currentDevice) {
+    if (toggleGps) {
+      toggleGps.checked = currentDevice.gpsTrackingEnabled !== false;
+      if (labelToggle) {
+        labelToggle.textContent = toggleGps.checked ? 'GPS Habilitado' : 'GPS Desactivado';
+        labelToggle.style.color = toggleGps.checked ? '#34d399' : '#f87171';
+      }
+    }
+    if (selectFreq) {
+      selectFreq.value = currentDevice.gpsIntervalSeconds || 30;
+    }
+
+    const loc = currentDevice.location;
+    if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
+      if (addressEl) addressEl.textContent = `📍 ${loc.address || 'Ubicación satelital en vivo'}`;
+      if (lastUpdateEl && loc.lastUpdated) {
+        const d = new Date(loc.lastUpdated);
+        lastUpdateEl.textContent = `Último reporte: ${d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+      }
+
+      if (mapContainer && typeof L !== 'undefined') {
+        try {
+          if (!dedicatedLeafletMap) {
+            dedicatedLeafletMap = L.map('mapLeafletDedicated', { zoomControl: true }).setView([loc.latitude, loc.longitude], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              maxZoom: 19,
+              attribution: '&copy; OpenStreetMap'
+            }).addTo(dedicatedLeafletMap);
+
+            dedicatedMarker = L.marker([loc.latitude, loc.longitude]).addTo(dedicatedLeafletMap)
+              .bindPopup(`<b>${currentDevice.name}</b><br>Ubicación GPS en vivo`)
+              .openPopup();
+          } else {
+            dedicatedLeafletMap.setView([loc.latitude, loc.longitude], 15);
+            if (dedicatedMarker) {
+              dedicatedMarker.setLatLng([loc.latitude, loc.longitude]);
+            }
+          }
+          setTimeout(() => { if (dedicatedLeafletMap) dedicatedLeafletMap.invalidateSize(); }, 200);
+        } catch (e) {
+          console.error('[Map] Error inicializando mapa dedicado:', e);
+        }
+      }
+    } else {
+      if (addressEl) addressEl.textContent = '📍 Esperando primera coordenada satelital GPS...';
+      if (mapContainer && typeof L !== 'undefined') {
+        try {
+          if (!dedicatedLeafletMap) {
+            dedicatedLeafletMap = L.map('mapLeafletDedicated', { zoomControl: true }).setView([-33.4489, -70.6693], 12);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(dedicatedLeafletMap);
+          }
+          setTimeout(() => { if (dedicatedLeafletMap) dedicatedLeafletMap.invalidateSize(); }, 200);
+        } catch (e) {}
+      }
+    }
+  }
+}
+
+async function toggleGpsRemoteTracking(enabled) {
+  if (!currentDevice) {
+    showToast('No hay dispositivo activo para configurar GPS', 'warning');
+    return;
+  }
+  currentDevice.gpsTrackingEnabled = enabled;
+  await updateRemoteConfig({ gpsTrackingEnabled: enabled });
+  const label = document.getElementById('labelGpsRemoteToggle');
+  if (label) {
+    label.textContent = enabled ? 'GPS Habilitado' : 'GPS Desactivado';
+    label.style.color = enabled ? '#34d399' : '#f87171';
+  }
+  const settingsToggle = document.getElementById('settingsToggleGps');
+  if (settingsToggle) settingsToggle.checked = enabled;
+  showToast(enabled ? '🛰️ Rastreo GPS Activado en el teléfono' : '🚫 Rastreo GPS Desactivado remotamente', enabled ? 'success' : 'warning');
+}
+
+// ----------------------------------------------------------------
+// Tab 6: Capturas y Multimedia (Fotos, Videos 5s, Audios con Fecha y Hora)
+// ----------------------------------------------------------------
+let multimediaItems = [];
+
+async function fetchAndRenderMultimediaGallery(filter = 'all') {
+  activeMultimediaFilter = filter;
+  const container = document.getElementById('multimediaGridContainer');
+  if (!container) return;
+
+  if (!currentDevice) {
+    container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-muted);">Sin dispositivo seleccionado</div>`;
+    return;
+  }
+
+  container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-muted);"><span style="font-size: 1.5rem;">⏳</span><br>Cargando historial multimedia...</div>`;
+
+  try {
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/multimedia`);
+    if (res.ok) {
+      const data = await res.json();
+      multimediaCache = {
+        screenshots: data.screenshots || [],
+        videos: data.videos || [],
+        audios: data.audios || []
+      };
+
+      // Unificar todos los items cronológicamente
+      let allItems = [
+        ...multimediaCache.screenshots,
+        ...multimediaCache.videos,
+        ...multimediaCache.audios
+      ];
+
+      // Ordenar por fecha descendente
+      allItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      multimediaItems = allItems;
+
+      renderMultimediaGrid(filter);
+    } else {
+      container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #f87171;">No se pudo cargar el historial multimedia</div>`;
+    }
+  } catch (err) {
+    console.error('Error cargando multimedia:', err);
+    container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #f87171;">Error al consultar multimedia</div>`;
+  }
+}
+
+function renderMultimediaGrid(filter = 'all') {
+  const container = document.getElementById('multimediaGridContainer');
+  if (!container) return;
+
+  let filtered = multimediaItems;
+  if (filter === 'image') filtered = multimediaItems.filter(item => item.type === 'image');
+  if (filter === 'video') filtered = multimediaItems.filter(item => item.type === 'video');
+  if (filter === 'audio') filtered = multimediaItems.filter(item => item.type === 'audio');
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div style="grid-column: 1/-1; text-align: center; padding: 40px 20px; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.08);">
+        <div style="font-size: 2.5rem; margin-bottom: 10px;">📂</div>
+        <h4 style="color: #fff; margin: 0 0 6px 0;">No hay elementos en esta categoría</h4>
+        <p style="color: var(--text-muted); font-size: 0.84rem; margin: 0;">Usa los botones superiores para capturar fotos, grabar videos o escuchar audios en vivo.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = filtered.map((item, idx) => {
+    const isImg = item.type === 'image';
+    const isVid = item.type === 'video';
+    const isAud = item.type === 'audio';
+
+    const typeBadge = isImg ? '📸 Captura' : isVid ? '🎥 Video (5s)' : '🎙️ Audio (5s)';
+    const typeColor = isImg ? '#38bdf8' : isVid ? '#c084fc' : '#34d399';
+
+    // Generar vista previa en la tarjeta
+    let previewHtml = '';
+    if (isImg) {
+      previewHtml = `
+        <div style="height: 140px; overflow: hidden; border-radius: 8px; background: #000; display: flex; align-items: center; justify-content: center; cursor: pointer;" onclick="openMediaPreviewByIndex(${idx})">
+          <img src="${item.url}" style="width: 100%; height: 100%; object-fit: cover;" alt="Captura">
+        </div>
+      `;
+    } else if (isVid) {
+      const firstFrame = item.frames && item.frames.length ? item.frames[0] : '';
+      const frameSrc = firstFrame.startsWith('data:') ? firstFrame : (firstFrame ? 'data:image/jpeg;base64,' + firstFrame : '');
+      previewHtml = `
+        <div style="height: 140px; position: relative; overflow: hidden; border-radius: 8px; background: #000; display: flex; align-items: center; justify-content: center; cursor: pointer;" onclick="openMediaPreviewByIndex(${idx})">
+          ${frameSrc ? `<img src="${frameSrc}" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.85;" alt="Video">` : `<span style="font-size: 2rem;">🎥</span>`}
+          <div style="position: absolute; width: 44px; height: 44px; background: rgba(0,0,0,0.65); border: 2px solid #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #fff;">
+            ▶
+          </div>
+        </div>
+      `;
+    } else {
+      previewHtml = `
+        <div style="height: 140px; border-radius: 8px; background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(5,150,105,0.05)); border: 1px solid rgba(16,185,129,0.25); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer;" onclick="openMediaPreviewByIndex(${idx})">
+          <div style="font-size: 2.2rem; margin-bottom: 4px;">🎙️</div>
+          <span style="font-size: 0.78rem; color: #34d399; font-weight: 600;">Escuchar Audio (5s)</span>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="multimedia-item-card" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.74rem; font-weight: 700; color: ${typeColor}; background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 4px;">
+            ${typeBadge}
+          </span>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">
+            ${item.timeFormatted || ''}
+          </span>
+        </div>
+
+        ${previewHtml}
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px; font-size: 0.76rem; color: var(--text-secondary);">
+          <span>📅 ${item.dateFormatted || 'Hoy'}</span>
+          <button class="btn btn-outline btn-sm" style="padding: 3px 10px; font-size: 0.75rem;" onclick="openMediaPreviewByIndex(${idx})">
+            ${isImg ? '🔍 Ver' : isVid ? '▶️ Reproducir' : '🔊 Escuchar'}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openMediaPreviewByIndex(index) {
+  const item = multimediaItems[index];
+  if (!item) return;
+
+  const box = document.getElementById('multimediaPreviewBox');
+  const title = document.getElementById('previewMediaTitle');
+  const content = document.getElementById('previewMediaContent');
+  if (!box || !title || !content) return;
+
+  box.style.display = 'block';
+  box.scrollIntoView({ behavior: 'smooth' });
+
+  if (item.type === 'image') {
+    title.textContent = `📸 Captura de Pantalla - ${item.dateFormatted} a las ${item.timeFormatted}`;
+    content.innerHTML = `
+      <div style="max-width: 600px; margin: 0 auto;">
+        <img src="${item.url}" alt="Captura ampliada" style="width: 100%; max-height: 480px; object-fit: contain; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);">
+      </div>
+    `;
+  } else if (item.type === 'video') {
+    title.textContent = `🎥 Clip de Video (5s) - ${item.dateFormatted} a las ${item.timeFormatted}`;
+    const frames = item.frames || [];
+    currentVideoClip.frames = frames;
+    currentVideoClip.intervalMs = item.intervalMs || 500;
+    currentVideoClip.currentIndex = 0;
+
+    content.innerHTML = `
+      <div style="max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 10px;">
+        <img id="mediaPreviewVideoFrame" src="${frames[0] ? (frames[0].startsWith('data:') ? frames[0] : 'data:image/jpeg;base64,' + frames[0]) : ''}" style="width: 100%; max-height: 420px; object-fit: contain; border-radius: 10px; background: #000; border: 1px solid rgba(255,255,255,0.1);" alt="Video Frame">
+        <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
+          <button id="btnMediaPreviewPlay" class="btn btn-primary btn-sm" onclick="togglePlayPreviewVideo()">⏸ Pausar</button>
+          <input type="range" id="mediaPreviewSlider" min="0" max="${Math.max(0, frames.length - 1)}" value="0" style="flex: 1;" oninput="onSlidePreviewVideo(this.value)">
+          <span id="mediaPreviewTime" style="font-size: 0.85rem; color: #fff; font-family: monospace;">0.0s</span>
+        </div>
+      </div>
+    `;
+
+    playPreviewVideo();
+  } else if (item.type === 'audio') {
+    title.textContent = `🎙️ Audio Ambiental (5s) - ${item.dateFormatted} a las ${item.timeFormatted}`;
+    content.innerHTML = `
+      <div style="max-width: 500px; width: 100%; margin: 0 auto; padding: 20px; background: rgba(16,185,129,0.08); border-radius: 12px; border: 1px solid rgba(16,185,129,0.25); display: flex; flex-direction: column; align-items: center; gap: 12px;">
+        <div style="font-size: 3rem;">🎙️</div>
+        <div style="color: #34d399; font-weight: 600; font-size: 1rem;">Grabación Ambiental del Menor</div>
+        <audio src="${item.audioBase64}" controls autoplay style="width: 100%; max-width: 420px;"></audio>
+      </div>
+    `;
+  }
+}
+
+let previewVideoTimer = null;
+let previewVideoIndex = 0;
+let previewVideoPlaying = false;
+
+function playPreviewVideo() {
+  if (previewVideoTimer) clearInterval(previewVideoTimer);
+  previewVideoPlaying = true;
+  const btn = document.getElementById('btnMediaPreviewPlay');
+  if (btn) btn.textContent = '⏸ Pausar';
+
+  previewVideoTimer = setInterval(() => {
+    if (!currentVideoClip.frames.length) return;
+    previewVideoIndex++;
+    if (previewVideoIndex >= currentVideoClip.frames.length) {
+      previewVideoIndex = 0;
+    }
+    updatePreviewVideoFrame(previewVideoIndex);
+  }, currentVideoClip.intervalMs || 500);
+}
+
+function pausePreviewVideo() {
+  if (previewVideoTimer) {
+    clearInterval(previewVideoTimer);
+    previewVideoTimer = null;
+  }
+  previewVideoPlaying = false;
+  const btn = document.getElementById('btnMediaPreviewPlay');
+  if (btn) btn.textContent = '▶ Reproducir';
+}
+
+function togglePlayPreviewVideo() {
+  if (previewVideoPlaying) {
+    pausePreviewVideo();
+  } else {
+    playPreviewVideo();
+  }
+}
+
+function onSlidePreviewVideo(val) {
+  pausePreviewVideo();
+  previewVideoIndex = parseInt(val, 10);
+  updatePreviewVideoFrame(previewVideoIndex);
+}
+
+function updatePreviewVideoFrame(idx) {
+  const img = document.getElementById('mediaPreviewVideoFrame');
+  const slider = document.getElementById('mediaPreviewSlider');
+  const timeText = document.getElementById('mediaPreviewTime');
+
+  if (img && currentVideoClip.frames[idx]) {
+    const f = currentVideoClip.frames[idx];
+    img.src = f.startsWith('data:') ? f : 'data:image/jpeg;base64,' + f;
+  }
+  if (slider) slider.value = idx;
+  if (timeText) {
+    const secs = ((idx * (currentVideoClip.intervalMs || 500)) / 1000).toFixed(1);
+    timeText.textContent = `${secs}s`;
+  }
+}
+
+// ----------------------------------------------------------------
+// Tab 7: Historial Completo
+// ----------------------------------------------------------------
+function renderHistoryTab() {
+  const feed = document.getElementById('historyTabActivityFeed');
+  if (!feed) return;
+
+  if (!currentDevice || !currentDevice.activityLog || currentDevice.activityLog.length === 0) {
+    feed.innerHTML = `
+      <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+        <span style="font-size: 2rem;">🕒</span><br>Sin actividad registrada en este dispositivo
+      </div>
+    `;
+    return;
+  }
+
+  feed.innerHTML = currentDevice.activityLog.map(item => {
+    const type = item.type || 'info';
+    let icon = 'ℹ️';
+    if (type === 'blocked' || type === 'warning') {
+      icon = '🛑';
+    } else if (type === 'alert') {
+      icon = '⚠️';
+    } else if (type === 'app_open') {
+      icon = '🚀';
+    }
+
+    return `
+      <div class="activity-feed-item ${type}" style="display: flex; gap: 12px; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+        <span style="font-size: 1.3rem;">${icon}</span>
+        <div style="flex: 1;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <strong style="color: #fff; font-size: 0.88rem;">${item.appName || item.package || 'Sistema'}</strong>
+            <span style="font-size: 0.75rem; color: var(--text-muted);">${item.time || ''}</span>
+          </div>
+          <p style="color: #cbd5e1; font-size: 0.82rem; margin: 3px 0 0 0;">${item.message || ''}</p>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ----------------------------------------------------------------
+// Tab 8: Configuraciones del Dispositivo
+// ----------------------------------------------------------------
+function renderSettingsTab() {
+  if (!currentDevice) return;
+
+  const toggleGps = document.getElementById('settingsToggleGps');
+  const toggleGpsText = document.getElementById('settingsToggleGpsText');
+  const gpsInterval = document.getElementById('settingsGpsInterval');
+  const limitRange = document.getElementById('settingsDailyLimitRange');
+  const limitBadge = document.getElementById('settingsDailyLimitBadge');
+  const toggleBedtime = document.getElementById('settingsToggleBedtime');
+  const toggleBedtimeText = document.getElementById('settingsToggleBedtimeText');
+  const bedtimeStart = document.getElementById('settingsBedtimeStart');
+  const bedtimeEnd = document.getElementById('settingsBedtimeEnd');
+  const parentPin = document.getElementById('settingsParentPinInput');
+
+  if (toggleGps) {
+    toggleGps.checked = currentDevice.gpsTrackingEnabled !== false;
+    if (toggleGpsText) {
+      toggleGpsText.textContent = toggleGps.checked ? 'Activado' : 'Desactivado';
+      toggleGpsText.style.color = toggleGps.checked ? '#34d399' : '#f87171';
+    }
+  }
+  if (gpsInterval) gpsInterval.value = currentDevice.gpsIntervalSeconds || 30;
+
+  if (limitRange) {
+    limitRange.value = currentDevice.dailyLimitMinutes || 120;
+    if (limitBadge) limitBadge.textContent = `${limitRange.value} min (${Math.floor(limitRange.value/60)}h ${limitRange.value%60}m)`;
+  }
+
+  if (toggleBedtime) {
+    toggleBedtime.checked = Boolean(currentDevice.bedtimeEnabled);
+    if (toggleBedtimeText) {
+      toggleBedtimeText.textContent = toggleBedtime.checked ? 'Habilitado' : 'Deshabilitado';
+      toggleBedtimeText.style.color = toggleBedtime.checked ? '#a78bfa' : '#94a3b8';
+    }
+  }
+  if (bedtimeStart) bedtimeStart.value = currentDevice.bedtimeStart || '21:30';
+  if (bedtimeEnd) bedtimeEnd.value = currentDevice.bedtimeEnd || '07:00';
+  if (parentPin) parentPin.value = currentDevice.parentPin || '1234';
+}
+
 // Event Bindings
 function bindEvents() {
   try {
-  // Multi-Page Navigation Tabs & Buttons
+  // Modular Navigation Tabs (Desktop & Drawer)
+  document.querySelectorAll('[data-view]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const view = btn.dataset.view;
+      if (view) {
+        switchDashboardView(view);
+      }
+    });
+  });
+
   const brandLogoBtn = document.getElementById('brandLogoBtn');
   if (brandLogoBtn) brandLogoBtn.addEventListener('click', () => switchView('portal'));
 
+  // Compatibilidad con botones de navegación heredados
   const navTabPortal = document.getElementById('navTabPortal');
   if (navTabPortal) navTabPortal.addEventListener('click', () => switchView('portal'));
 
   const navTabMonitoring = document.getElementById('navTabMonitoring');
-  if (navTabMonitoring) navTabMonitoring.addEventListener('click', () => switchView('monitoring'));
+  if (navTabMonitoring) navTabMonitoring.addEventListener('click', () => switchDashboardView('overview'));
 
   const navTabApps = document.getElementById('navTabApps');
-  if (navTabApps) navTabApps.addEventListener('click', () => switchView('monitoring', 'deviceAppsCard'));
+  if (navTabApps) navTabApps.addEventListener('click', () => switchDashboardView('overview', 'sectionAppsColumn'));
 
   const navTabGps = document.getElementById('navTabGps');
-  if (navTabGps) navTabGps.addEventListener('click', () => switchView('monitoring', 'gpsTrackingCard'));
+  if (navTabGps) navTabGps.addEventListener('click', () => switchDashboardView('map'));
 
   const navTabTimeline = document.getElementById('navTabTimeline');
-  if (navTabTimeline) navTabTimeline.addEventListener('click', () => switchView('monitoring', 'timelineCard'));
+  if (navTabTimeline) navTabTimeline.addEventListener('click', () => switchDashboardView('history'));
+
+  const navTabLogout = document.getElementById('navTabLogout');
+  if (navTabLogout) navTabLogout.addEventListener('click', logoutAdmin);
 
   // Mobile Drawer Navigation
   const btnMobileMenu = document.getElementById('btnMobileMenu');
@@ -1109,37 +1730,172 @@ function bindEvents() {
   const mobileDrawerBackdrop = document.getElementById('mobileDrawerBackdrop');
   if (mobileDrawerBackdrop) mobileDrawerBackdrop.addEventListener('click', closeMobileDrawer);
 
-  const drawerLinkPortal = document.getElementById('drawerLinkPortal');
-  if (drawerLinkPortal) drawerLinkPortal.addEventListener('click', () => switchView('portal'));
-
-  const drawerLinkMonitoring = document.getElementById('drawerLinkMonitoring');
-  if (drawerLinkMonitoring) drawerLinkMonitoring.addEventListener('click', () => switchView('monitoring'));
-
-  const drawerLinkApps = document.getElementById('drawerLinkApps');
-  if (drawerLinkApps) drawerLinkApps.addEventListener('click', () => switchView('monitoring', 'deviceAppsCard'));
-
-  const drawerLinkGps = document.getElementById('drawerLinkGps');
-  if (drawerLinkGps) drawerLinkGps.addEventListener('click', () => switchView('monitoring', 'gpsTrackingCard'));
-
-  const drawerLinkTimeline = document.getElementById('drawerLinkTimeline');
-  if (drawerLinkTimeline) drawerLinkTimeline.addEventListener('click', () => switchView('monitoring', 'timelineCard'));
-
-  const drawerBtnSubscription = document.getElementById('drawerBtnSubscription');
-  if (drawerBtnSubscription) {
-    drawerBtnSubscription.addEventListener('click', () => {
+  const drawerBtnLogout = document.getElementById('drawerBtnLogout');
+  if (drawerBtnLogout) {
+    drawerBtnLogout.addEventListener('click', () => {
       closeMobileDrawer();
-      switchView('portal', 'portalPricingSection');
+      logoutAdmin();
     });
   }
 
-  const drawerBtnAuth = document.getElementById('drawerBtnAuth');
-  if (drawerBtnAuth) {
-    drawerBtnAuth.addEventListener('click', () => {
-      closeMobileDrawer();
-      if (adminUser) {
-        modalAdminLogin.classList.add('active');
-      } else {
-        switchView('portal', 'portalAuthCard');
+  // Live Screenshot Pause / Resume
+  const btnTogglePauseLive = document.getElementById('btnTogglePauseLive') || document.getElementById('btnToggleLivePause');
+  if (btnTogglePauseLive) btnTogglePauseLive.addEventListener('click', toggleLiveScreenshotPause);
+
+  // Pestaña Dispositivos: Botones de acción
+  const btnDevicesTabAdd = document.getElementById('btnDevicesTabAdd');
+  if (btnDevicesTabAdd) btnDevicesTabAdd.addEventListener('click', openAddDeviceModal);
+
+  const btnDevicesTabQr = document.getElementById('btnDevicesTabQr');
+  if (btnDevicesTabQr) btnDevicesTabQr.addEventListener('click', openPairingQrModal);
+
+  // Pestaña Mapa: Controles de GPS
+  const toggleGpsTrackingRemote = document.getElementById('toggleGpsTrackingRemote');
+  if (toggleGpsTrackingRemote) {
+    toggleGpsTrackingRemote.addEventListener('change', (e) => {
+      toggleGpsRemoteTracking(e.target.checked);
+    });
+  }
+
+  const selectGpsFrequency = document.getElementById('selectGpsFrequency');
+  if (selectGpsFrequency) {
+    selectGpsFrequency.addEventListener('change', async (e) => {
+      const intervalSec = parseInt(e.target.value, 10) || 30;
+      if (currentDevice) {
+        currentDevice.gpsIntervalSeconds = intervalSec;
+        await updateRemoteConfig({ gpsIntervalSeconds: intervalSec });
+        showToast(`⏱️ Frecuencia GPS actualizada a ${intervalSec} segundos`, 'success');
+      }
+    });
+  }
+
+  const btnMapTabRefreshLocation = document.getElementById('btnMapTabRefreshLocation');
+  if (btnMapTabRefreshLocation) btnMapTabRefreshLocation.addEventListener('click', requestLocationNow);
+
+  const btnMapTabRouteHistory = document.getElementById('btnMapTabRouteHistory');
+  if (btnMapTabRouteHistory) btnMapTabRouteHistory.addEventListener('click', toggleRouteHistory);
+
+  const btnMapTabGeofences = document.getElementById('btnMapTabGeofences');
+  if (btnMapTabGeofences) btnMapTabGeofences.addEventListener('click', () => {
+    fetchAndRenderGeofences();
+    showToast('Geocercas de Casa y Colegio actualizadas en el mapa', 'info');
+  });
+
+  // Pestaña Multimedia: Filtros y Acciones
+  const btnFilterMediaAll = document.getElementById('btnFilterMediaAll');
+  const btnFilterMediaPhotos = document.getElementById('btnFilterMediaPhotos');
+  const btnFilterMediaVideos = document.getElementById('btnFilterMediaVideos');
+  const btnFilterMediaAudios = document.getElementById('btnFilterMediaAudios');
+
+  function setMediaFilterActive(btn, filter) {
+    [btnFilterMediaAll, btnFilterMediaPhotos, btnFilterMediaVideos, btnFilterMediaAudios].forEach(b => b?.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    renderMultimediaGrid(filter);
+  }
+
+  if (btnFilterMediaAll) btnFilterMediaAll.addEventListener('click', () => setMediaFilterActive(btnFilterMediaAll, 'all'));
+  if (btnFilterMediaPhotos) btnFilterMediaPhotos.addEventListener('click', () => setMediaFilterActive(btnFilterMediaPhotos, 'image'));
+  if (btnFilterMediaVideos) btnFilterMediaVideos.addEventListener('click', () => setMediaFilterActive(btnFilterMediaVideos, 'video'));
+  if (btnFilterMediaAudios) btnFilterMediaAudios.addEventListener('click', () => setMediaFilterActive(btnFilterMediaAudios, 'audio'));
+
+  const btnCloseMediaPreview = document.getElementById('btnCloseMediaPreview');
+  if (btnCloseMediaPreview) {
+    btnCloseMediaPreview.addEventListener('click', () => {
+      pausePreviewVideo();
+      const box = document.getElementById('multimediaPreviewBox');
+      if (box) box.style.display = 'none';
+    });
+  }
+
+  const btnMultiTabCapturePhoto = document.getElementById('btnMultiTabCapturePhoto');
+  if (btnMultiTabCapturePhoto) btnMultiTabCapturePhoto.addEventListener('click', requestScreenshotNow);
+
+  const btnMultiTabCaptureVideo = document.getElementById('btnMultiTabCaptureVideo');
+  if (btnMultiTabCaptureVideo) btnMultiTabCaptureVideo.addEventListener('click', requestVideo5s);
+
+  const btnMultiTabCaptureAudio = document.getElementById('btnMultiTabCaptureAudio');
+  if (btnMultiTabCaptureAudio) btnMultiTabCaptureAudio.addEventListener('click', requestAudio5s);
+
+  // Pestaña Configuraciones: Guardado de Ajustes
+  const btnSaveGpsSettings = document.getElementById('btnSaveGpsSettings');
+  if (btnSaveGpsSettings) {
+    btnSaveGpsSettings.addEventListener('click', async () => {
+      const enabled = document.getElementById('settingsToggleGps')?.checked ?? true;
+      const intervalSec = parseInt(document.getElementById('settingsGpsInterval')?.value, 10) || 30;
+      if (currentDevice) {
+        currentDevice.gpsTrackingEnabled = enabled;
+        currentDevice.gpsIntervalSeconds = intervalSec;
+        await updateRemoteConfig({ gpsTrackingEnabled: enabled, gpsIntervalSeconds: intervalSec });
+        showToast('✅ Configuración de GPS guardada correctamente', 'success');
+      }
+    });
+  }
+
+  const settingsDailyLimitRange = document.getElementById('settingsDailyLimitRange');
+  const settingsDailyLimitBadge = document.getElementById('settingsDailyLimitBadge');
+  if (settingsDailyLimitRange) {
+    settingsDailyLimitRange.addEventListener('input', (e) => {
+      const mins = parseInt(e.target.value, 10);
+      if (settingsDailyLimitBadge) {
+        settingsDailyLimitBadge.textContent = `${mins} min (${Math.floor(mins/60)}h ${mins%60}m)`;
+      }
+    });
+  }
+
+  const btnSaveDailyLimitSettings = document.getElementById('btnSaveDailyLimitSettings');
+  if (btnSaveDailyLimitSettings) {
+    btnSaveDailyLimitSettings.addEventListener('click', async () => {
+      const mins = parseInt(document.getElementById('settingsDailyLimitRange')?.value, 10) || 120;
+      if (currentDevice) {
+        currentDevice.dailyLimitMinutes = mins;
+        await updateRemoteConfig({ dailyLimitMinutes: mins });
+        renderHero();
+        showToast(`✅ Límite diario actualizado a ${mins} minutos`, 'success');
+      }
+    });
+  }
+
+  const settingsToggleBedtime = document.getElementById('settingsToggleBedtime');
+  const settingsToggleBedtimeText = document.getElementById('settingsToggleBedtimeText');
+  if (settingsToggleBedtime) {
+    settingsToggleBedtime.addEventListener('change', (e) => {
+      if (settingsToggleBedtimeText) {
+        settingsToggleBedtimeText.textContent = e.target.checked ? 'Habilitado' : 'Deshabilitado';
+        settingsToggleBedtimeText.style.color = e.target.checked ? '#a78bfa' : '#94a3b8';
+      }
+    });
+  }
+
+  const btnSaveBedtimeSettings = document.getElementById('btnSaveBedtimeSettings');
+  if (btnSaveBedtimeSettings) {
+    btnSaveBedtimeSettings.addEventListener('click', async () => {
+      const bedtimeEnabled = document.getElementById('settingsToggleBedtime')?.checked ?? false;
+      const bedtimeStart = document.getElementById('settingsBedtimeStart')?.value || '21:30';
+      const bedtimeEnd = document.getElementById('settingsBedtimeEnd')?.value || '07:00';
+      if (currentDevice) {
+        currentDevice.bedtimeEnabled = bedtimeEnabled;
+        currentDevice.bedtimeStart = bedtimeStart;
+        currentDevice.bedtimeEnd = bedtimeEnd;
+        await updateRemoteConfig({ bedtimeEnabled, bedtimeStart, bedtimeEnd });
+        showToast('✅ Horario nocturno guardado correctamente', 'success');
+      }
+    });
+  }
+
+  const btnSaveParentPinSettings = document.getElementById('btnSaveParentPinSettings');
+  if (btnSaveParentPinSettings) {
+    btnSaveParentPinSettings.addEventListener('click', async () => {
+      const pin = (document.getElementById('settingsParentPinInput')?.value || '').trim();
+      if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+        showToast('El PIN debe tener exactamente 4 dígitos numéricos', 'warning');
+        return;
+      }
+      if (currentDevice) {
+        currentDevice.parentPin = pin;
+        await updateRemoteConfig({ parentPin: pin });
+        const headerPinDisplay = document.getElementById('headerPinDisplay');
+        if (headerPinDisplay) headerPinDisplay.textContent = pin;
+        showToast('✅ PIN parental actualizado con éxito', 'success');
       }
     });
   }
@@ -1168,18 +1924,75 @@ function bindEvents() {
   const portalLoginForm = document.getElementById('portalLoginForm');
   const portalRegisterForm = document.getElementById('portalRegisterForm');
 
-  if (portalTabLogin && portalTabRegister) {
-    portalTabLogin.addEventListener('click', () => {
+  function switchToLoginTab(prefillEmail = '') {
+    if (portalTabLogin && portalTabRegister) {
       portalTabLogin.classList.add('active');
       portalTabRegister.classList.remove('active');
       if (portalLoginForm) portalLoginForm.style.display = 'block';
       if (portalRegisterForm) portalRegisterForm.style.display = 'none';
-    });
-    portalTabRegister.addEventListener('click', () => {
+      if (prefillEmail) {
+        const loginEmail = document.getElementById('portalLoginEmail');
+        if (loginEmail) {
+          loginEmail.value = prefillEmail;
+          document.getElementById('portalLoginPassword')?.focus();
+        }
+      }
+    }
+  }
+
+  function switchToRegisterTab() {
+    if (portalTabLogin && portalTabRegister) {
       portalTabRegister.classList.add('active');
       portalTabLogin.classList.remove('active');
       if (portalLoginForm) portalLoginForm.style.display = 'none';
       if (portalRegisterForm) portalRegisterForm.style.display = 'block';
+    }
+  }
+
+  if (portalTabLogin && portalTabRegister) {
+    portalTabLogin.addEventListener('click', () => switchToLoginTab());
+    portalTabRegister.addEventListener('click', () => switchToRegisterTab());
+  }
+
+  // Pre-validation: Check if email already exists on typing in register form
+  const portalRegEmail = document.getElementById('portalRegEmail');
+  let emailPreCheckTimer = null;
+  if (portalRegEmail) {
+    portalRegEmail.addEventListener('input', () => {
+      clearTimeout(emailPreCheckTimer);
+      const email = portalRegEmail.value.trim().toLowerCase();
+      const feedbackEl = document.getElementById('portalRegEmailFeedback');
+      if (!email || !email.includes('@') || !email.includes('.')) {
+        if (feedbackEl) feedbackEl.innerHTML = '';
+        portalRegEmail.classList.remove('input-warning-border', 'input-error-border');
+        return;
+      }
+
+      emailPreCheckTimer = setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(email)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.exists) {
+              portalRegEmail.classList.add('input-warning-border');
+              if (feedbackEl) {
+                feedbackEl.className = 'input-feedback-msg warning';
+                feedbackEl.innerHTML = `⚠️ Ya existe una cuenta con este correo. <a href="#" id="linkSwitchToLoginQuick" style="color: #6366f1; font-weight: 700; text-decoration: underline;">Iniciar Sesión aquí</a>`;
+                document.getElementById('linkSwitchToLoginQuick')?.addEventListener('click', (ev) => {
+                  ev.preventDefault();
+                  switchToLoginTab(email);
+                });
+              }
+            } else {
+              portalRegEmail.classList.remove('input-warning-border', 'input-error-border');
+              if (feedbackEl) {
+                feedbackEl.className = 'input-feedback-msg success';
+                feedbackEl.textContent = '✓ Correo disponible para registrar';
+              }
+            }
+          }
+        } catch (e) {}
+      }, 500);
     });
   }
 
@@ -1210,7 +2023,7 @@ function bindEvents() {
           showToast(err.error || 'Error al iniciar sesión', 'danger');
         }
       } catch (e) {
-        showToast('Error de conexión', 'danger');
+        showToast('Error de conexión con el servidor', 'danger');
       }
     });
   }
@@ -1291,13 +2104,20 @@ function bindEvents() {
           adminUser = data.user;
           localStorage.setItem('kidsshield_admin_token', adminAuthToken);
           setAdminLoggedInUI(adminUser);
-          showToast('🎉 ¡Familia registrada con éxito!', 'success');
+          showToast('🎉 ¡Familia registrada con éxito! Prueba Pro activa.', 'success');
         } else {
           const err = await res.json();
-          showToast(err.error || 'Error al registrar', 'danger');
+          if (res.status === 409 || err.alreadyExists) {
+            showToast('⚠️ Esta cuenta ya existe. Te redirigimos al inicio de sesión...', 'warning');
+            setTimeout(() => {
+              switchToLoginTab(email);
+            }, 1000);
+          } else {
+            showToast(err.error || 'Error al registrar la cuenta', 'danger');
+          }
         }
       } catch (e) {
-        showToast('Error de conexión', 'danger');
+        showToast('Error de conexión con el servidor', 'danger');
       }
     });
   }
@@ -1629,6 +2449,10 @@ function bindEvents() {
   if (btnSubmitRegister) {
     btnSubmitRegister.addEventListener('click', registerFamilyAccount);
   }
+  const btnSubmitEmailReg = document.getElementById('btnSubmitEmailRegister');
+  if (btnSubmitEmailReg) {
+    btnSubmitEmailReg.addEventListener('click', registerFamilyAccount);
+  }
 
   // Subscription Modal Trigger & Handlers
   if (btnOpenSubscriptionModal) {
@@ -1694,7 +2518,7 @@ function bindEvents() {
 // Multi-Device Functions
 async function loadDevicesList(selectedIdToSet) {
   try {
-    const res = await fetch('/api/devices');
+    const res = await apiFetch('/api/devices');
     if (res.ok) {
       devicesList = await res.json();
       renderDeviceSelector(selectedIdToSet);
@@ -1763,6 +2587,14 @@ async function onDeviceSelected(deviceId, updateDropdown = true) {
   }
 }
 
+function openAddDeviceModal() {
+  if (inputNewDeviceId) inputNewDeviceId.value = `KID-PHONE-0${(devicesList.length + 1) || 2}`;
+  if (inputNewDeviceName) inputNewDeviceName.value = '';
+  if (inputNewDeviceModel) inputNewDeviceModel.value = '';
+  if (inputNewDevicePin) inputNewDevicePin.value = '1234';
+  if (modalAddDevice) modalAddDevice.classList.add('active');
+}
+
 async function createNewDevice() {
   const id = inputNewDeviceId.value.trim().toUpperCase();
   const name = inputNewDeviceName.value.trim();
@@ -1775,7 +2607,7 @@ async function createNewDevice() {
   }
 
   try {
-    const res = await fetch('/api/devices', {
+    const res = await apiFetch('/api/devices', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, name, model, childName: name, parentPin: pin })
@@ -2998,6 +3830,26 @@ function setAdminLoggedInUI(user, sub) {
       adminProfileAvatarFallback.textContent = user.avatar || '👨‍💼';
     }
   }
+
+  // Activar y mostrar el menú superior al iniciar sesión
+  const desktopNav = document.querySelector('.desktop-nav-tabs');
+  if (desktopNav) desktopNav.style.display = 'flex';
+
+  const drawerBtnLogout = document.getElementById('drawerBtnLogout');
+  if (drawerBtnLogout) drawerBtnLogout.style.display = 'block';
+  const drawerBtnAuth = document.getElementById('drawerBtnAuth');
+  if (drawerBtnAuth) drawerBtnAuth.style.display = 'none';
+
+  const drawerUserName = document.getElementById('drawerUserName');
+  if (drawerUserName) drawerUserName.textContent = user.name || 'Titular de Familia';
+  const drawerUserEmail = document.getElementById('drawerUserEmail');
+  if (drawerUserEmail) drawerUserEmail.textContent = user.email || '';
+
+  if (modalAdminLogin) modalAdminLogin.classList.remove('active');
+
+  // Conmutar a la vista de monitoreo y resumen general
+  switchView('monitoring');
+  switchDashboardView('overview');
 }
 
 function setAdminLoggedOutUI() {
@@ -3021,12 +3873,29 @@ function setAdminLoggedOutUI() {
     btnAdminProfile.classList.add('logged-out');
     btnAdminProfile.title = 'Iniciar sesión o registrar tu cuenta familiar';
   }
+
+  // Ocultar menú superior si no hay sesión iniciada
+  const desktopNav = document.querySelector('.desktop-nav-tabs');
+  if (desktopNav) desktopNav.style.display = 'none';
+
+  const drawerBtnLogout = document.getElementById('drawerBtnLogout');
+  if (drawerBtnLogout) drawerBtnLogout.style.display = 'none';
+  const drawerBtnAuth = document.getElementById('drawerBtnAuth');
+  if (drawerBtnAuth) drawerBtnAuth.style.display = 'block';
+
+  const drawerUserName = document.getElementById('drawerUserName');
+  if (drawerUserName) drawerUserName.textContent = 'Invitado';
+  const drawerUserEmail = document.getElementById('drawerUserEmail');
+  if (drawerUserEmail) drawerUserEmail.textContent = 'Sin sesión iniciada';
+
+  // Mostrar el portal de inicio/login
+  switchView('portal');
 }
 
 // Toggle app block state
 async function toggleAppBlock(packageName, isBlocked) {
   try {
-    const res = await fetch(`/api/devices/${currentDevice.id}/toggle-app`, {
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/toggle-app`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ package: packageName, isBlocked })
@@ -3064,7 +3933,7 @@ async function toggleAppBlock(packageName, isBlocked) {
 // Update remote configuration
 async function updateRemoteConfig(patch) {
   try {
-    const res = await fetch(`/api/devices/${currentDevice.id}/config`, {
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch)
@@ -3087,7 +3956,7 @@ async function updateRemoteConfig(patch) {
 // Fetch device data from server
 async function fetchDeviceData(deviceId = currentDevice.id) {
   try {
-    const res = await fetch(`/api/devices/${deviceId}`);
+    const res = await apiFetch(`/api/devices/${deviceId}`);
     if (res.ok) {
       currentDevice = await res.json();
       renderAll();
@@ -3104,13 +3973,31 @@ function setupWebSocket() {
   try {
     socket = new WebSocket(wsUrl);
     socket.onopen = () => console.log('🟢 Conectado al canal en tiempo real KidsShield');
-    socket.onmessage = (event) => {
+    socket.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
 
         if (data.type === 'DEVICE_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
           currentDevice = data.payload;
           renderAll();
+        } else if (data.type === 'DEVICE_STATUS_CHANGED') {
+          const { id, isOnline, message, lastSeen } = data.payload || {};
+          const dev = devicesList.find(d => d.id === id);
+          if (dev) {
+            dev.isOnline = isOnline;
+            if (lastSeen) dev.lastSeen = lastSeen;
+          }
+          if (currentDevice && currentDevice.id === id) {
+            currentDevice.isOnline = isOnline;
+            if (lastSeen) currentDevice.lastSeen = lastSeen;
+            renderHeader();
+            renderHero();
+          }
+          if (!isOnline) {
+            showToast(message || `⚠️ Conexión perdida con ${dev?.name || id}. Posible desinstalación o sin red.`, 'warning');
+            playAlertSound();
+            triggerWebNotification('⚠️ Dispositivo Desconectado', message || `Se perdió la conexión con ${dev?.name || id}.`);
+          }
         } else if (data.type === 'DEVICE_DELETED') {
           showToast(`Dispositivo ${data.payload?.id || ''} fue desvinculado`, 'info');
           devicesList = devicesList.filter(d => d.id !== data.payload?.id);
@@ -3133,9 +4020,16 @@ function setupWebSocket() {
         } else if (data.type === 'CONFIG_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
           Object.assign(currentDevice, data.payload.config);
           renderHero();
-          renderScheduleControls();
-        } else if (data.type === 'DEVICES_UPDATED') {
-          loadDevicesList();
+        } else if (data.type === 'DEVICE_CREATED' || data.type === 'DEVICES_UPDATED') {
+          const newId = data.payload?.id;
+          await loadDevicesList(newId || (currentDevice ? currentDevice.id : null));
+          if (currentDashboardView === 'devices') {
+            renderDevicesTab();
+          }
+          if (data.type === 'DEVICE_CREATED') {
+            showToast(`📱 ¡Nuevo dispositivo conectado: ${data.payload?.name || 'Teléfono del Menor'}!`, 'success');
+            playAlertSound();
+          }
         } else if (data.type === 'SCREENSHOT_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
           if (!isLivePaused) {
             currentDevice.lastScreenshot = data.payload.imageBase64 || data.payload.screenshot;

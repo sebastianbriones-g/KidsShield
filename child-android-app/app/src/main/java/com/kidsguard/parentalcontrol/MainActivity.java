@@ -25,6 +25,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.journeyapps.barcodescanner.ScanContract;
 import com.journeyapps.barcodescanner.ScanOptions;
 import com.kidsguard.parentalcontrol.models.ParentalConfig;
+import com.kidsguard.parentalcontrol.network.SyncClient;
 import com.kidsguard.parentalcontrol.receivers.DeviceAdminReceiver;
 import com.kidsguard.parentalcontrol.services.AppBlockerAccessibilityService;
 import com.kidsguard.parentalcontrol.services.UsageMonitorService;
@@ -495,7 +496,9 @@ public class MainActivity extends AppCompatActivity {
                     builder.setPositiveButton("Desinstalar", (dialog, which) -> {
                         String enteredPin = inputPin.getText().toString().trim();
                         ParentalConfig cfg = ParentalConfig.getInstance(MainActivity.this);
-                        if (enteredPin.equals(cfg.getParentPin()) || "1234".equals(enteredPin)) {
+                        if (enteredPin.equals(cfg.getParentPin())) {
+                            SyncClient.sendEvent(MainActivity.this, "APP_UNINSTALLED_BY_PARENT", getPackageName(), "KidsShield",
+                                    "🔓 Desinstalación autorizada por el padre mediante PIN correcto.");
                             try {
                                 devicePolicyManager.removeActiveAdmin(adminComponent);
                             } catch (Exception ignored) {}

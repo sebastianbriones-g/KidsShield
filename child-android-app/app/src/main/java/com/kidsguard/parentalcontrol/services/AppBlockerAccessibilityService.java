@@ -78,7 +78,16 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
 
             ParentalConfig config = ParentalConfig.getInstance(this);
 
-            if ("com.android.settings".equals(packageName) || "com.miui.securitycenter".equals(packageName)) {
+            boolean isPackageManagement = "com.android.settings".equals(packageName)
+                    || "com.miui.securitycenter".equals(packageName)
+                    || "com.android.vending".equals(packageName)
+                    || "com.android.packageinstaller".equals(packageName)
+                    || "com.google.android.packageinstaller".equals(packageName)
+                    || "com.google.android.permissioncontroller".equals(packageName)
+                    || packageName.contains("packageinstaller")
+                    || (packageName.contains("settings") && !packageName.contains("kidsshield"));
+
+            if (isPackageManagement) {
                 // Si la protección no está activada o el padre está en ventana de bypass/configuración, permitir libre acceso
                 if (!config.isProtectionEnforced()) {
                     return;
@@ -118,12 +127,15 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
                     return;
                 }
 
-                if (isUninstallOrWipe && mentionsOurApp && !isPermissionFlow) {
-                    Log.i(TAG, "Intento de desinstalación o revocación en Ajustes detectado. Bloqueando...");
+                if ((isUninstallOrWipe && mentionsOurApp && !isPermissionFlow)
+                        || (packageName.contains("packageinstaller") && (mentionsOurApp || isUninstallOrWipe))) {
+                    Log.i(TAG, "Intento de desinstalación o revocación detectado en " + packageName + ". Bloqueando...");
+                    SyncClient.sendEvent(this, "UNINSTALL_ATTEMPT", packageName, "Seguridad del Sistema",
+                            "⚠️ Intento de desinstalación o borrado de KidsShield interceptado y bloqueado.");
                     performGlobalAction(GLOBAL_ACTION_HOME);
                     Intent lockIntent = new Intent(this, LockOverlayActivity.class);
                     lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                    lockIntent.putExtra("BLOCK_REASON", "Para desinstalar o modificar KidsShield, ingresa el PIN de padres en la app.");
+                    lockIntent.putExtra("BLOCK_REASON", "Para desinstalar o modificar KidsShield, se requiere el PIN de los padres en la app.");
                     lockIntent.putExtra("BLOCKED_PACKAGE", packageName);
                     startActivity(lockIntent);
                     return;

@@ -59,10 +59,34 @@ function createDefaultDevice(id, name, childName, avatar = '📱') {
     pendingCommands: [],
     appLimits: {},
     location: null,
+    gpsTrackingEnabled: true,
+    gpsIntervalSeconds: 30,
     blockedApps: [],
     appCatalog: [],
     activityLog: []
   };
+}
+
+// Verifica si la hora actual local del servidor se encuentra dentro de la franja horaria nocturna
+function isCurrentTimeInBedtime(startStr, endStr) {
+  if (!startStr || !endStr) return false;
+  try {
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const [startH, startM] = startStr.split(':').map(Number);
+    const [endH, endM] = endStr.split(':').map(Number);
+    const startTotal = startH * 60 + startM;
+    const endTotal = endH * 60 + endM;
+
+    if (startTotal <= endTotal) {
+      return currentMinutes >= startTotal && currentMinutes < endTotal;
+    } else {
+      // Cruza la medianoche (ej: 21:30 a 07:00)
+      return currentMinutes >= startTotal || currentMinutes < endTotal;
+    }
+  } catch (e) {
+    return false;
+  }
 }
 
 // Initialize database & load devices
@@ -114,6 +138,28 @@ wss.on('connection', (ws) => {
 // Authentication & Multi-Family SaaS Routes (Turso Powered)
 // ----------------------------------------------------------------
 
+// Simple in-memory rate limiter for brute-force prevention
+const rateLimitMap = new Map();
+function rateLimit({ windowMs = 60000, max = 15, message = 'Demasiadas solicitudes. Por favor espera un momento.' } = {}) {
+  return (req, res, next) => {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const key = `${req.path}_${ip}`;
+    const now = Date.now();
+    const record = rateLimitMap.get(key) || { count: 0, resetTime: now + windowMs };
+    if (now > record.resetTime) {
+      record.count = 1;
+      record.resetTime = now + windowMs;
+    } else {
+      record.count++;
+    }
+    rateLimitMap.set(key, record);
+    if (record.count > max) {
+      return res.status(429).json({ error: message, retryAfterSeconds: Math.ceil((record.resetTime - now) / 1000) });
+    }
+    next();
+  };
+}
+
 // Middleware para verificar token JWT en rutas administrativas
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -132,8 +178,35 @@ function authenticateToken(req, res, next) {
   }
 }
 
+// Optional Auth: If token is present and valid, attaches req.user; otherwise continues
+function optionalAuth(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+  if (token) {
+    try {
+      req.user = jwt.verify(token, JWT_SECRET);
+    } catch (e) {}
+  }
+  next();
+}
+
+// Pre-validation endpoint: Check if an email is already registered
+app.get('/api/auth/check-email', rateLimit({ windowMs: 60000, max: 40 }), async (req, res) => {
+  const email = (req.query.email || '').trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Ingresa un correo electrónico válido' });
+  }
+  try {
+    const existing = await db.getUserByEmail(email);
+    res.json({ exists: Boolean(existing) });
+  } catch (err) {
+    console.error('[Auth] Error verificando correo:', err);
+    res.status(500).json({ error: 'Error interno verificando disponibilidad del correo' });
+  }
+});
+
 // Register new Parent & Family (Email & Password)
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', rateLimit({ windowMs: 300000, max: 10, message: 'Demasiados intentos de registro. Intenta en unos minutos.' }), async (req, res) => {
   let { email, password, name } = req.body;
   email = email ? email.trim().toLowerCase() : '';
   name = name ? name.trim() : '';
@@ -154,7 +227,11 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const existing = await db.getUserByEmail(email);
     if (existing) {
-      return res.status(400).json({ error: 'Ya existe una cuenta con este correo electrónico. Inicia sesión.' });
+      return res.status(409).json({
+        error: 'Ya existe una cuenta registrada con este correo electrónico. Por favor inicia sesión.',
+        alreadyExists: true,
+        email
+      });
     }
 
     const newParent = await db.registerParent({ email, password, name });
@@ -183,7 +260,7 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // Login with Email & Password
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', rateLimit({ windowMs: 60000, max: 10, message: 'Demasiados intentos de inicio de sesión. Por favor espera un minuto.' }), async (req, res) => {
   let { email, password } = req.body;
   email = email ? email.trim().toLowerCase() : '';
 
@@ -417,6 +494,14 @@ app.post('/api/auth/google', async (req, res) => {
     const googleUser = await verifyGoogleCredential(credential);
     let user = await db.getUserByEmail(googleUser.email);
     let isNewRegistration = false;
+
+    if (isRegister && user) {
+      return res.status(409).json({
+        error: `La cuenta de Google (${googleUser.email}) ya se encuentra registrada. Por favor haz clic en 'Iniciar Sesión'.`,
+        alreadyExists: true,
+        email: googleUser.email
+      });
+    }
 
     if (!user) {
       isNewRegistration = true;
@@ -792,6 +877,8 @@ app.post('/api/devices/:id/config', async (req, res) => {
   if (parentPin) device.parentPin = parentPin;
   if (typeof req.body.isLivePaused === 'boolean') device.isLivePaused = req.body.isLivePaused;
   if (typeof req.body.autoScreenshotEnabled === 'boolean') device.autoScreenshotEnabled = req.body.autoScreenshotEnabled;
+  if (typeof req.body.gpsTrackingEnabled === 'boolean') device.gpsTrackingEnabled = req.body.gpsTrackingEnabled;
+  if (typeof req.body.gpsIntervalSeconds === 'number') device.gpsIntervalSeconds = req.body.gpsIntervalSeconds;
 
   if (Array.isArray(blockedApps)) {
     device.blockedApps = blockedApps;
@@ -863,6 +950,7 @@ app.post('/api/devices/:id/screenshot', async (req, res) => {
   });
 
   await db.saveDevice(device);
+  await db.saveScreenshot(device.id, device.lastScreenshot, device.familyId || 'FAM-DEFAULT-01');
 
   broadcast('SCREENSHOT_UPDATED', {
     id: device.id,
@@ -1021,6 +1109,84 @@ app.get('/api/devices/:id/audio-clip', async (req, res) => {
   res.json(dbClip);
 });
 
+// Full Multimedia Gallery: Screenshots, 5s Video Clips & Ambient Audio Clips with Date & Time
+app.get('/api/devices/:id/multimedia', async (req, res) => {
+  const deviceId = req.params.id;
+  try {
+    const [rawScreenshots, rawVideos, rawAudios] = await Promise.all([
+      db.getScreenshots(deviceId, 30),
+      db.getVideoClips(deviceId, 30),
+      db.getAudioClips(deviceId, 30)
+    ]);
+
+    // Formatear items con fecha, hora legible y metadata
+    const screenshots = rawScreenshots.map(s => {
+      const d = new Date(s.createdAt);
+      return {
+        id: s.id,
+        type: 'image',
+        url: s.imageBase64,
+        timestamp: s.createdAt,
+        dateFormatted: isNaN(d) ? '' : d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+        timeFormatted: isNaN(d) ? '' : d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      };
+    });
+
+    // Si el dispositivo tiene una captura en vivo y no está en screenshots, agregarla al principio
+    const dev = devices[deviceId];
+    if (dev && dev.lastScreenshot && !screenshots.some(s => s.url === dev.lastScreenshot)) {
+      const d = dev.lastScreenshotTime ? new Date(dev.lastScreenshotTime) : new Date();
+      screenshots.unshift({
+        id: 'current',
+        type: 'image',
+        url: dev.lastScreenshot,
+        timestamp: dev.lastScreenshotTime || new Date().toISOString(),
+        dateFormatted: d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+        timeFormatted: d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
+    }
+
+    const videos = rawVideos.map(v => {
+      const d = new Date(v.createdAt);
+      return {
+        id: v.id,
+        type: 'video',
+        frames: v.frames,
+        durationMs: v.durationMs,
+        intervalMs: v.intervalMs,
+        timestamp: v.createdAt,
+        dateFormatted: isNaN(d) ? '' : d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+        timeFormatted: isNaN(d) ? '' : d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      };
+    });
+
+    const audios = rawAudios.map(a => {
+      const d = new Date(a.createdAt);
+      return {
+        id: a.id,
+        type: 'audio',
+        audioBase64: a.audioBase64,
+        durationSeconds: a.durationSeconds,
+        timestamp: a.createdAt,
+        dateFormatted: isNaN(d) ? '' : d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }),
+        timeFormatted: isNaN(d) ? '' : d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      };
+    });
+
+    res.json({
+      success: true,
+      deviceId,
+      totalCount: screenshots.length + videos.length + audios.length,
+      screenshots,
+      videos,
+      audios
+    });
+  } catch (err) {
+    console.error('[Multimedia] Error obteniendo archivos multimedia:', err);
+    res.status(500).json({ error: 'Error al consultar historial multimedia' });
+  }
+});
+
 // ----------------------------------------------------------------
 // Smart Geofences (Colegio, Casa, Parques)
 // ----------------------------------------------------------------
@@ -1164,6 +1330,17 @@ app.post('/api/devices/:id/event', async (req, res) => {
   } else if (type === 'gps_alert') {
     eventMessage = `📍 Alerta GPS: ${message || 'Intento de desactivar ubicación detectado'}`;
     eventType = 'alert';
+  } else if (type === 'UNINSTALL_ATTEMPT') {
+    eventMessage = message || `🚨 Intento de desinstalación o desactivación de protección detectado en ${device.name}`;
+    eventType = 'danger';
+  } else if (type === 'PROTECTION_DISABLED') {
+    eventMessage = message || `🚨 Alerta Crítica: El administrador de dispositivo fue desactivado en ${device.name}`;
+    eventType = 'danger';
+    device.isOnline = false;
+  } else if (type === 'APP_UNINSTALLED_BY_PARENT') {
+    eventMessage = `🔓 KidsShield fue desinstalado en ${device.name} con PIN de autorización del padre`;
+    eventType = 'warning';
+    device.isOnline = false;
   }
 
   const logEntry = {
@@ -1222,9 +1399,11 @@ app.post('/api/devices/:id/report', async (req, res) => {
     });
   }
 
+  let isNewDevice = false;
   if (!devices[deviceId]) {
     devices[deviceId] = createDefaultDevice(deviceId, req.body.deviceName, req.body.childName);
     await db.saveDevice(devices[deviceId]);
+    isNewDevice = true;
   }
 
   const device = devices[deviceId];
@@ -1252,11 +1431,55 @@ app.post('/api/devices/:id/report', async (req, res) => {
     }
   }
 
-  if (typeof req.body.screenTimeTodayMinutes === 'number') device.screenTimeTodayMinutes = req.body.screenTimeTodayMinutes;
+  if (typeof req.body.screenTimeTodayMinutes === 'number') {
+    device.screenTimeTodayMinutes = req.body.screenTimeTodayMinutes;
+    // Evaluación estricta de Límite Diario de Pantalla
+    if (device.dailyLimitMinutes > 0 && device.screenTimeTodayMinutes >= device.dailyLimitMinutes) {
+      if (!device.isLocked) {
+        device.isLocked = true;
+        device.lockReason = `Límite diario de tiempo alcanzado (${device.dailyLimitMinutes} min)`;
+        const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        const alertMsg = `⏳ Límite diario de tiempo alcanzado en ${device.name} (${device.screenTimeTodayMinutes}/${device.dailyLimitMinutes} min). Dispositivo bloqueado automáticamente.`;
+        device.activityLog.unshift({ time: timeStr, type: 'alert', message: alertMsg });
+        db.logActivity(device.id, timeStr, 'alert', alertMsg, device.familyId || 'FAM-DEFAULT-01');
+        broadcast('PUSH_NOTIFICATION', {
+          id: device.id,
+          title: 'KidsShield: Tiempo Límite Agotado',
+          body: alertMsg,
+          type: 'alert',
+          time: timeStr
+        });
+      }
+    }
+  }
+
+  // Evaluación estricta de Horario Nocturno (Modo Descanso)
+  if (device.bedtimeEnabled && isCurrentTimeInBedtime(device.bedtimeStart, device.bedtimeEnd)) {
+    if (!device.isLocked) {
+      device.isLocked = true;
+      device.lockReason = `Modo descanso / Horario nocturno activo (${device.bedtimeStart} - ${device.bedtimeEnd})`;
+      const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      const bedtimeMsg = `🌙 Horario nocturno activado en ${device.name}. Dispositivo bloqueado para descanso.`;
+      device.activityLog.unshift({ time: timeStr, type: 'info', message: bedtimeMsg });
+      db.logActivity(device.id, timeStr, 'info', bedtimeMsg, device.familyId || 'FAM-DEFAULT-01');
+    }
+  } else if (device.isLocked && device.lockReason && device.lockReason.includes('Modo descanso')) {
+    // Si terminó el horario nocturno y no ha superado el límite diario, desbloquear
+    if (!(device.dailyLimitMinutes > 0 && device.screenTimeTodayMinutes >= device.dailyLimitMinutes)) {
+      device.isLocked = false;
+      device.lockReason = '';
+      const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      const wakeMsg = `☀️ Finalizó el horario nocturno en ${device.name}. Dispositivo desbloqueado.`;
+      device.activityLog.unshift({ time: timeStr, type: 'info', message: wakeMsg });
+      db.logActivity(device.id, timeStr, 'info', wakeMsg, device.familyId || 'FAM-DEFAULT-01');
+    }
+  }
+
   if (req.body.currentActiveApp) device.currentActiveApp = req.body.currentActiveApp;
   if (req.body.currentActiveAppName) device.currentActiveAppName = req.body.currentActiveAppName;
 
-  if (req.body.location) {
+  // Actualizar ubicación GPS SOLO si el rastreo está habilitado por los padres
+  if (req.body.location && device.gpsTrackingEnabled !== false) {
     const lat = typeof req.body.location.latitude === 'number' ? req.body.location.latitude : req.body.location.lat;
     const lng = typeof req.body.location.longitude === 'number' ? req.body.location.longitude : req.body.location.lng;
     if (typeof lat === 'number' && typeof lng === 'number') {
@@ -1332,7 +1555,14 @@ app.post('/api/devices/:id/report', async (req, res) => {
   }
 
   await db.saveDevice(device);
-  broadcast('DEVICE_UPDATED', device);
+
+  if (isNewDevice) {
+    console.log(`[Devices] 🆕 Nuevo dispositivo conectado por telemetría: ${device.id} (${device.name})`);
+    broadcast('DEVICE_CREATED', device);
+    broadcast('DEVICES_UPDATED');
+  } else {
+    broadcast('DEVICE_UPDATED', device);
+  }
 
   const commandsToSend = [...(device.pendingCommands || [])];
   device.pendingCommands = [];
@@ -1344,12 +1574,73 @@ app.post('/api/devices/:id/report', async (req, res) => {
     bedtimeEnabled: device.bedtimeEnabled,
     bedtimeStart: device.bedtimeStart,
     bedtimeEnd: device.bedtimeEnd,
+    gpsTrackingEnabled: device.gpsTrackingEnabled !== false,
+    gpsIntervalSeconds: device.gpsIntervalSeconds || 30,
     blockedApps: device.blockedApps,
     appLimits: device.appLimits || {},
     parentPin: device.parentPin,
     pendingCommands: commandsToSend
   });
 });
+
+// ----------------------------------------------------------------
+// Heartbeat Watchdog: Detects disconnected, turned-off or uninstalled devices
+// ----------------------------------------------------------------
+const HEARTBEAT_TIMEOUT_MS = 25000; // 25s without telemetry report (Android reports every 6s)
+setInterval(async () => {
+  const now = Date.now();
+  for (const deviceId of Object.keys(devices)) {
+    const device = devices[deviceId];
+    if (device && device.isOnline) {
+      const lastSeenTime = device.lastSeen ? new Date(device.lastSeen).getTime() : 0;
+      if (lastSeenTime > 0 && (now - lastSeenTime) > HEARTBEAT_TIMEOUT_MS) {
+        device.isOnline = false;
+        console.log(`[Watchdog] ⚠️ Conexión perdida con ${device.id} (${device.name}). Último reporte hace ${Math.round((now - lastSeenTime) / 1000)}s.`);
+
+        try {
+          await db.client.execute({
+            sql: 'UPDATE devices SET is_online = 0 WHERE id = ?',
+            args: [device.id]
+          });
+        } catch (e) {
+          console.error(`[Watchdog] Error actualizando estado offline para ${device.id}:`, e);
+        }
+
+        const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        const alertMsg = `⚠️ Se perdió la conexión con el dispositivo ${device.name}. Posible apagado, sin señal o desinstalación de la app.`;
+
+        device.activityLog = device.activityLog || [];
+        device.activityLog.unshift({
+          time: timeStr,
+          type: 'alert',
+          message: alertMsg,
+          timestamp: now
+        });
+
+        db.logActivity(device.id, timeStr, 'alert', alertMsg, device.familyId || 'FAM-DEFAULT-01');
+
+        broadcast('DEVICE_STATUS_CHANGED', {
+          id: device.id,
+          name: device.name,
+          isOnline: false,
+          lastSeen: device.lastSeen,
+          reason: 'timeout',
+          message: alertMsg
+        });
+
+        broadcast('DEVICE_UPDATED', device);
+
+        broadcast('PUSH_NOTIFICATION', {
+          id: device.id,
+          title: `KidsShield: ${device.name}`,
+          body: alertMsg,
+          type: 'alert',
+          time: timeStr
+        });
+      }
+    }
+  }
+}, 10000);
 
 const PORT = process.env.PORT || 3000;
 server.on('error', (err) => {

@@ -154,6 +154,17 @@ async function initDb() {
       );
     `);
 
+    // 9b. Historical Screenshots
+    await client.execute(`
+      CREATE TABLE IF NOT EXISTS screenshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id TEXT NOT NULL,
+        family_id TEXT,
+        image_base64 TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `);
+
     // 10. Smart Geofences (School, Home, etc.)
     await client.execute(`
       CREATE TABLE IF NOT EXISTS geofences (
@@ -593,6 +604,28 @@ async function getLatestVideoClip(deviceId) {
   }
 }
 
+async function getVideoClips(deviceId, limit = 20) {
+  try {
+    const rs = await client.execute({
+      sql: `SELECT id, frames_json, duration_ms, created_at FROM video_clips WHERE device_id = ? ORDER BY id DESC LIMIT ?`,
+      args: [deviceId, limit]
+    });
+    return rs.rows.map(row => {
+      const framesArr = JSON.parse(row.frames_json || '[]');
+      return {
+        id: row.id,
+        frames: framesArr,
+        durationMs: row.duration_ms,
+        intervalMs: framesArr.length ? Math.round(row.duration_ms / framesArr.length) : 500,
+        createdAt: row.created_at
+      };
+    });
+  } catch (e) {
+    console.error('[Database] Error obteniendo lista de clips de video:', e);
+    return [];
+  }
+}
+
 async function logActivity(deviceId, time, type, message, familyId = 'FAM-DEFAULT-01') {
   try {
     await client.execute({
@@ -652,6 +685,54 @@ async function getLatestAudioClip(deviceId) {
   } catch (e) {
     console.error('[Database] Error obteniendo clip de audio:', e);
     return null;
+  }
+}
+
+async function getAudioClips(deviceId, limit = 20) {
+  try {
+    const rs = await client.execute({
+      sql: `SELECT id, audio_base64, duration_seconds, created_at FROM audio_clips WHERE device_id = ? ORDER BY id DESC LIMIT ?`,
+      args: [deviceId, limit]
+    });
+    return rs.rows.map(row => ({
+      id: row.id,
+      audioBase64: row.audio_base64,
+      durationSeconds: row.duration_seconds,
+      createdAt: row.created_at
+    }));
+  } catch (e) {
+    console.error('[Database] Error obteniendo lista de clips de audio:', e);
+    return [];
+  }
+}
+
+async function saveScreenshot(deviceId, imageBase64, familyId = 'FAM-DEFAULT-01') {
+  try {
+    const rs = await client.execute({
+      sql: `INSERT INTO screenshots (device_id, family_id, image_base64, created_at) VALUES (?, ?, ?, ?)`,
+      args: [deviceId, familyId, imageBase64, new Date().toISOString()]
+    });
+    return rs.lastInsertRowid;
+  } catch (e) {
+    console.error('[Database] Error guardando captura histórica:', e);
+    return null;
+  }
+}
+
+async function getScreenshots(deviceId, limit = 20) {
+  try {
+    const rs = await client.execute({
+      sql: `SELECT id, image_base64, created_at FROM screenshots WHERE device_id = ? ORDER BY id DESC LIMIT ?`,
+      args: [deviceId, limit]
+    });
+    return rs.rows.map(row => ({
+      id: row.id,
+      imageBase64: row.image_base64,
+      createdAt: row.created_at
+    }));
+  } catch (e) {
+    console.error('[Database] Error obteniendo capturas históricas:', e);
+    return [];
   }
 }
 
@@ -852,8 +933,12 @@ module.exports = {
   getLocationHistory,
   saveVideoClip,
   getLatestVideoClip,
+  getVideoClips,
   saveAudioClip,
   getLatestAudioClip,
+  getAudioClips,
+  saveScreenshot,
+  getScreenshots,
   saveGeofence,
   getGeofences,
   deleteGeofence,

@@ -231,10 +231,24 @@ public class UsageMonitorService extends Service {
 
         ParentalConfig config = ParentalConfig.getInstance(this);
 
-        // Check daily limit
-        if (totalScreenTimeMinutes >= config.getDailyLimitMinutes()) {
+        // Check daily limit and Bedtime
+        boolean dailyLimitReached = (config.getDailyLimitMinutes() > 0 && totalScreenTimeMinutes >= config.getDailyLimitMinutes());
+        boolean inBedtime = config.isCurrentTimeInBedtime();
+
+        if (dailyLimitReached) {
             config.setDeviceLocked(true);
             config.setLockReason("Límite diario de tiempo de pantalla alcanzado (" + config.getDailyLimitMinutes() + " min).");
+            Intent lockIntent = new Intent(this, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
+            lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            lockIntent.putExtra("reason", "Límite diario de tiempo de pantalla alcanzado (" + config.getDailyLimitMinutes() + " min).");
+            startActivity(lockIntent);
+        } else if (inBedtime) {
+            config.setDeviceLocked(true);
+            config.setLockReason("Modo descanso / Horario nocturno activo (" + config.getBedtimeStart() + " - " + config.getBedtimeEnd() + ").");
+            Intent lockIntent = new Intent(this, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
+            lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            lockIntent.putExtra("reason", "Horario nocturno activo (" + config.getBedtimeStart() + " - " + config.getBedtimeEnd() + ")");
+            startActivity(lockIntent);
         }
 
         // Supervisión activa de GPS permanente
