@@ -16,6 +16,8 @@
 - [Características Principales](#-características-principales)
 - [Arquitectura del Sistema](#-arquitectura-del-sistema)
 - [Seguridad y Autenticación](#-seguridad-y-autenticación)
+- [Navegación Unificada y Vinculación QR](#-navegación-unificada-y-vinculación-qr)
+- [Centro de Configuración y Facturación](#-centro-de-configuración-y-facturación)
 - [Recuperación de Contraseña y Correos](#-recuperación-de-contraseña-y-correos)
 - [Modelo de Monetización y Planes](#-modelo-de-monetización-y-planes)
 - [Requisitos del Sistema](#-requisitos-del-sistema)
@@ -33,6 +35,12 @@
 
 ## ✨ Características Principales
 
+- 🧭 **Navegación Unificada Lateral**: Sidebar optimizado con estructura clara (Resumen General, Mi Familia, Dispositivos, Mapa & Geocercas, Multimedia, Historial y Configuración) sin menús redundantes.
+- ⚙️ **Centro de Configuración en 2 Apartados**:
+  - **1. Configuración de Dispositivos**: Selector contextual de menor con parámetros de GPS, límite diario de pantalla, modo descanso (Bedtime) y PIN parental.
+  - **2. Configuración de Pago y Plan**: Tarjeta bancaria virtual interactiva, modal de actualización, conmutador de **Renovación Automática (Auto-Renew)**, cuota de dispositivos e historial de recibos con descarga PDF.
+- 📱 **Vinculación Rápida con Código QR Dinámico**: Generador de QR interactivo en modal emergente que despliega el código de emparejamiento familiar y dirección IP del servidor para sincronización instantánea con la cámara del menor.
+- 💎 **Gestión de Membresías y Estado Familiar**: Tarjeta lateral con visualización de nivel de suscripción (*Familia Total VIP 💎* / *Familiar Pro ⚡*) y botón de mejora/gestión sin solapamientos.
 - 🔒 **Bloqueo Instantáneo y Resiliente**: Bloqueo remoto del dispositivo en menos de 1 segundo mediante WebSockets y servicios nativos de accesibilidad y superposición de pantalla (`Draw over apps`).
 - 🚀 **Asistente Inteligente de Permisos Android (6 Pasos)**: Interfaz en el móvil del menor que guía paso a paso al padre o tutor para conceder los permisos del sistema con un solo botón inteligente (*"Otorgar Siguiente Permiso Faltante"*).
 - ⏱️ **Límites de Uso y Horarios de Descanso (Bedtime)**: Asignación de tiempo límite diario global o por categoría de app, con bloqueo automático nocturno programable.
@@ -86,6 +94,47 @@ KidsShield ha sido diseñado bajo estándares estrictos de seguridad para entorn
 - **Sesiones con JWT**: Tokens JSON Web Tokens con tiempo de expiración y firma segura configurable mediante `JWT_SECRET`.
 - **Tokens Temporales de Restablecimiento**: Generación de tokens seguros y de uso único con caducidad automática a los 60 minutos.
 - **Cero Datos Ficticios**: El panel de control no genera usuarios ni dispositivos simulados; muestra el estado verídico de la base de datos ("Sin dispositivo vinculado" hasta completar la vinculación real).
+
+---
+
+## 🧭 Navegación Unificada y Vinculación QR
+
+El panel de control cuenta con una arquitectura de navegación moderna en el Sidebar lateral:
+
+1. **Estructura Modular del Menú**:
+   - 🏠 **Resumen General**: Visión global del estado de todos los dispositivos de los hijos (batería, límites y última actividad).
+   - 👨‍👩‍👧‍👦 **Mi Familia**: Administración de miembros del grupo familiar con atajos directos a configuración, mapa y multimedia.
+   - 📱 **Dispositivos**: Registro y estado de conectividad en tiempo real de cada terminal supervisado.
+   - 📍 **Mapa & Geocercas**: Posicionamiento satelital GPS, zonas seguras (geofences) con radio y ruta histórica con polilíneas.
+   - 🎬 **Multimedia**: Galería de capturas remotas y clips de vídeo de 5 segundos.
+   - 📜 **Historial**: Línea de tiempo detallada de apertura de aplicaciones y eventos del sistema.
+   - ⚙️ **Configuración**: Parámetros técnicos y facturación divididos por apartados.
+
+2. **Generador Dinámico de Códigos QR**:
+   - Al pulsar en **"Vincular Nuevo Dispositivo"** o el icono de QR de cualquier hijo, se abre un modal interactivo con el código QR renderizado al vuelo mediante `qrcode.js`.
+   - Incluye el código alfanumérico familiar y la URL/IP del servidor detectada (red local o Tailscale) con botones de copiado en 1 clic.
+
+---
+
+## ⚙️ Centro de Configuración y Facturación
+
+El Centro de Configuración ha sido reestructurado en **dos apartados especializados** accesibles mediante un selector segmentado moderno:
+
+### 📱 Apartado 1: Configuración de Dispositivos
+Permite ajustar las directivas de seguridad aplicadas al teléfono seleccionado:
+- **Selector Contextual de Hijo**: Permite alternar instantáneamente entre los dispositivos de la familia.
+- **📍 Rastreo y Ubicación GPS**: Conmutador de activación remota y selector de frecuencia de actualización (15s, 30s, 1m, 2m, 5m).
+- **⏳ Límite Diario de Pantalla**: Control deslizante interactivo (15 a 600 minutos) con visualizador en horas y minutos.
+- **🌙 Modo Descanso (Horario Nocturno / Bedtime)**: Conmutador y selectores de hora de inicio (`settingsBedtimeStart`) y hora de fin (`settingsBedtimeEnd`).
+- **🔑 PIN Parental de Seguridad**: Código de 4 dígitos para desbloqueo de emergencia o autorizaciones presenciales en el móvil.
+
+### 💳 Apartado 2: Configuración de Pago y Plan
+Gestión integral de suscripción y facturación conectada al backend:
+- **Tarjeta Bancaria Virtual**: Simulación estética con chip dorado, emisor VISA, número enmascarado (`•••• 4242`), titular y vencimiento.
+- **Modal de Actualización de Tarjeta**: Formulario con validación de emisor (Visa, Mastercard, Amex), número, expiración y CVC.
+- **🔄 Renovación Automática (Auto-Renew)**: Conmutador en tiempo real con persistencia en base de datos (`auto_renew` en Turso/SQLite) y proyección de la fecha del próximo ciclo de cobro.
+- **Cuota de Dispositivos**: Indicador dinámico del cupo de terminales según el plan activo (*Hasta 5 teléfonos en Familiar Pro* / *Hasta 10 teléfonos en Familia Total VIP*).
+- **📋 Historial de Pagos y Recibos**: Registro de facturación con descripción del servicio, fecha, ID de transacción, método de pago, monto, estado (`✓ Pagado`) y botón para descargar recibos en PDF.
 
 ---
 
