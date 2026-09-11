@@ -32,6 +32,7 @@ Thumbs.db
 
 # Build tools binaries
 build_tools/
+scratch/
 
 # GitHub workflows (requires workflow PAT scope)
 .github/

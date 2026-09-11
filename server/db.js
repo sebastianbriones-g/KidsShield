@@ -52,9 +52,26 @@ async function initDb() {
         max_devices INTEGER DEFAULT 5,
         current_period_end TEXT,
         payment_provider TEXT DEFAULT 'trial',
+        card_last4 TEXT DEFAULT '4242',
+        card_brand TEXT DEFAULT 'Visa',
+        card_exp TEXT DEFAULT '12/28',
+        card_holder TEXT DEFAULT 'Sebastián Briones',
+        auto_renew INTEGER DEFAULT 1,
         created_at TEXT NOT NULL
       );
     `);
+
+    // Migraciones seguras si la tabla ya existía
+    const subCols = [
+      "ALTER TABLE subscriptions ADD COLUMN card_last4 TEXT DEFAULT '4242'",
+      "ALTER TABLE subscriptions ADD COLUMN card_brand TEXT DEFAULT 'Visa'",
+      "ALTER TABLE subscriptions ADD COLUMN card_exp TEXT DEFAULT '12/28'",
+      "ALTER TABLE subscriptions ADD COLUMN card_holder TEXT DEFAULT 'Sebastián Briones'",
+      "ALTER TABLE subscriptions ADD COLUMN auto_renew INTEGER DEFAULT 1"
+    ];
+    for (const sql of subCols) {
+      try { await client.execute(sql); } catch (_) {}
+    }
 
     // 4. Children Profiles
     await client.execute(`
@@ -336,12 +353,46 @@ async function getFamilySubscription(familyId) {
       status: row.status,
       maxDevices: row.max_devices,
       currentPeriodEnd: row.current_period_end,
-      paymentProvider: row.payment_provider
+      paymentProvider: row.payment_provider,
+      cardLast4: row.card_last4 || '4242',
+      cardBrand: row.card_brand || 'Visa',
+      cardExp: row.card_exp || '12/28',
+      cardHolder: row.card_holder || 'Sebastián Briones',
+      autoRenew: (row.auto_renew === 0 || row.auto_renew === false) ? false : true
     };
   } catch (e) {
     console.error('[Database] Error leyendo suscripción:', e);
-    return { plan: 'free', status: 'active', maxDevices: 1 };
+    return { plan: 'free', status: 'active', maxDevices: 1, cardLast4: '4242', cardBrand: 'Visa', cardExp: '12/28', cardHolder: 'Sebastián Briones', autoRenew: true };
   }
+}
+
+async function updateSubscriptionCard(familyId, cardData) {
+  const last4 = String(cardData.last4 || '4242').slice(-4);
+  const brand = cardData.brand || 'Visa';
+  const exp = cardData.exp || '12/28';
+  const holder = cardData.holder || 'Sebastián Briones';
+  await client.execute({
+    sql: `
+      UPDATE subscriptions
+      SET card_last4 = ?, card_brand = ?, card_exp = ?, card_holder = ?
+      WHERE family_id = ?
+    `,
+    args: [last4, brand, exp, holder, familyId]
+  });
+  return { success: true, cardLast4: last4, cardBrand: brand, cardExp: exp, cardHolder: holder };
+}
+
+async function toggleAutoRenew(familyId, autoRenew) {
+  const val = autoRenew ? 1 : 0;
+  await client.execute({
+    sql: `
+      UPDATE subscriptions
+      SET auto_renew = ?
+      WHERE family_id = ?
+    `,
+    args: [val, familyId]
+  });
+  return { success: true, autoRenew: Boolean(val) };
 }
 
 async function updateSubscriptionPlan(familyId, newPlan) {
@@ -946,6 +997,8 @@ module.exports = {
   getActivityLogs,
   createPasswordReset,
   verifyPasswordResetToken,
-  resetPasswordWithToken
+  resetPasswordWithToken,
+  updateSubscriptionCard,
+  toggleAutoRenew
 };
 

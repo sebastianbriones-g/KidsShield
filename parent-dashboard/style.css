@@ -253,16 +253,9 @@ body {
   color: var(--text-muted);
 }
 
-/* Desktop Navigation Tabs (Molecules) */
+/* Desktop Navigation Tabs (Eliminado en favor del Sidebar) */
 .desktop-nav-tabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 4px 6px;
-  border-radius: var(--radius-full);
-  backdrop-filter: blur(12px);
+  display: none !important;
 }
 
 .nav-tab-btn {
@@ -3755,4 +3748,1108 @@ body {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
+/* ========================================================================== */
+/* NUEVA ESTRUCTURA: SIDEBAR FAMILY LINK / SAAS (OPCIÓN 2)                     */
+/* ========================================================================== */
 
+.monitoring-layout-wrapper {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  width: 100%;
+  position: relative;
+}
+
+/* Sidebar Permanente */
+.dashboard-sidebar {
+  width: 275px;
+  min-width: 275px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 18px 14px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  position: sticky;
+  top: 90px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  z-index: 20;
+}
+
+/* Info de la Familia en Sidebar (Layout de 2 Filas Espacioso) */
+.sidebar-family-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.sidebar-family-info:hover {
+  border-color: rgba(99, 102, 241, 0.3);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.sidebar-family-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.sidebar-family-avatar {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(139, 92, 246, 0.25));
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+}
+
+.sidebar-family-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-family-title {
+  display: block;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-family-status {
+  display: block;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-family-plan-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-family-plan-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  color: #e9d5ff;
+}
+
+.sidebar-family-plan-badge.plan-vip {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(236, 72, 153, 0.2));
+  border-color: rgba(168, 85, 247, 0.45);
+  color: #f5d0fe;
+}
+
+.sidebar-family-plan-badge.plan-pro {
+  background: rgba(250, 204, 21, 0.15);
+  border-color: rgba(250, 204, 21, 0.35);
+  color: #fde047;
+}
+
+.sidebar-family-plan-badge.plan-free {
+  background: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #cbd5e1;
+}
+
+/* Navegación Vertical */
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.sidebar-nav-item:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateX(3px);
+}
+
+.sidebar-nav-item.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(79, 70, 229, 0.2) 100%);
+  border-color: rgba(99, 102, 241, 0.5);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.2);
+}
+
+.sidebar-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-text {
+  flex: 1;
+  font-size: 0.9rem;
+}
+
+/* Pie del Sidebar */
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #f87171;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sidebar-logout-btn:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+}
+
+/* Contenido Principal a la Derecha */
+.dashboard-content-area {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ========================================================================== */
+/* RESUMEN GENERAL MULTI-DISPOSITIVO                                          */
+/* ========================================================================== */
+
+.overview-top-section {
+  background: rgba(20, 27, 45, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 22px;
+  margin-bottom: 24px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.overview-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.overview-main-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.overview-main-subtitle {
+  font-size: 0.86rem;
+  color: #94a3b8;
+  margin: 4px 0 0 0;
+}
+
+.family-overview-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 18px;
+}
+
+.child-overview-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.child-overview-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
+}
+
+.child-overview-card.is-active-device {
+  border-color: #6366f1;
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.12) 0%, rgba(15, 23, 42, 0.5) 100%);
+  box-shadow: 0 0 0 1px #6366f1, 0 8px 24px rgba(99, 102, 241, 0.2);
+}
+
+.card-child-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.child-info-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.child-avatar-badge {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: rgba(99, 102, 241, 0.2);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+}
+
+.child-name-text {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #ffffff;
+  margin: 0;
+}
+
+.child-device-model {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin: 2px 0 0 0;
+}
+
+.card-child-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+
+.card-child-progress-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+}
+
+.card-progress-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.card-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #10b981 0%, #6366f1 70%, #ef4444 100%);
+  transition: width 0.4s ease;
+}
+
+.card-active-app-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: #cbd5e1;
+}
+
+.card-app-pill {
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: #a5b4fc;
+  font-weight: 600;
+}
+
+.card-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-card-view-screen {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.2);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #c7d2fe;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-card-view-screen:hover {
+  background: #6366f1;
+  color: #fff;
+}
+
+.btn-card-quick-lock {
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-card-quick-lock.is-locked {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.btn-card-quick-lock.is-unlocked {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #6ee7b7;
+}
+
+/* Sección de Supervisión en Vivo en Resumen */
+.live-supervision-section {
+  margin-top: 10px;
+}
+
+.live-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.live-section-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.live-section-subtitle {
+  font-size: 0.84rem;
+  color: #94a3b8;
+  margin: 4px 0 0 0;
+}
+
+/* ========================================================================== */
+/* TARJETAS DE MI FAMILIA CON LOS 3 ACCESOS DIRECTOS OBLIGATORIOS             */
+/* ========================================================================== */
+
+.family-children-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 20px;
+  margin-top: 18px;
+}
+
+.child-family-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+}
+
+.child-family-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.family-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.family-card-profile {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.family-card-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(139, 92, 246, 0.25) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+}
+
+.family-card-name {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.family-card-devname {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin: 2px 0 0 0;
+}
+
+.family-card-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+}
+
+/* Fila de los 3 Accesos Directos Obligatorios */
+.family-card-shortcuts-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.btn-family-shortcut {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 6px;
+  border-radius: 12px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  border: 1px solid transparent;
+}
+
+.btn-family-shortcut span.shortcut-icon {
+  font-size: 1.25rem;
+}
+
+.btn-shortcut-map {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
+}
+
+.btn-shortcut-map:hover {
+  background: #3b82f6;
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.btn-shortcut-multi {
+  background: rgba(168, 85, 247, 0.15);
+  border-color: rgba(168, 85, 247, 0.35);
+  color: #d8b4fe;
+}
+
+.btn-shortcut-multi:hover {
+  background: #a855f7;
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.btn-shortcut-config {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fde68a;
+}
+
+.btn-shortcut-config:hover {
+  background: #f59e0b;
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.family-card-aux-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ========================================================================== */
+/* SELECTORES CONTEXTUALES DE DISPOSITIVO                                      */
+/* ========================================================================== */
+
+.child-context-select-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 6px 14px;
+}
+
+.child-context-select-wrapper label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.child-context-select {
+  background: #0f172a;
+  color: #ffffff;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.child-context-select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+}
+
+/* ========================================================================== */
+/* GESTOR INTERACTIVO DE LUGARES Y GEOCERCAS                                  */
+/* ========================================================================== */
+
+.geofence-quick-categories {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.btn-geofence-cat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.btn-geofence-cat:hover, .btn-geofence-cat.active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: #6366f1;
+  color: #fff;
+}
+
+.geofence-radius-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.geofence-saved-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  transition: border-color 0.2s ease;
+}
+
+.geofence-saved-item:hover {
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+.geofence-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.geofence-item-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+}
+
+.geofence-item-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #fff;
+  margin: 0;
+}
+
+.geofence-item-sub {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin: 2px 0 0 0;
+}
+
+/* ========================================================================== */
+/* RESPONSIVE QUERIES PARA SIDEBAR                                            */
+/* ========================================================================== */
+
+@media (max-width: 1024px) {
+  .monitoring-layout-wrapper {
+    flex-direction: column;
+  }
+  
+  .dashboard-sidebar {
+    width: 100%;
+    min-width: 100%;
+    position: static;
+    top: auto;
+  }
+  
+  .sidebar-nav {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+}
+
+@media (max-width: 680px) {
+  .sidebar-nav {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  color: #93c5fd;
+}
+
+.btn-shortcut-map:hover {
+  background: #3b82f6;
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.btn-shortcut-multi {
+  background: rgba(168, 85, 247, 0.15);
+  border-color: rgba(168, 85, 247, 0.35);
+  color: #d8b4fe;
+}
+
+.btn-shortcut-multi:hover {
+  background: #a855f7;
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.btn-shortcut-config {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fde68a;
+}
+
+.btn-shortcut-config:hover {
+  background: #f59e0b;
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.family-card-aux-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ========================================================================== */
+/* SELECTORES CONTEXTUALES DE DISPOSITIVO                                      */
+/* ========================================================================== */
+
+.child-context-select-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 6px 14px;
+}
+
+.child-context-select-wrapper label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.child-context-select {
+  background: #0f172a;
+  color: #ffffff;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.child-context-select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+}
+
+/* ========================================================================== */
+/* GESTOR INTERACTIVO DE LUGARES Y GEOCERCAS                                  */
+/* ========================================================================== */
+
+.geofence-quick-categories {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.btn-geofence-cat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.btn-geofence-cat:hover, .btn-geofence-cat.active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: #6366f1;
+  color: #fff;
+}
+
+.geofence-radius-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.geofence-saved-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  transition: border-color 0.2s ease;
+}
+
+.geofence-saved-item:hover {
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+.geofence-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.geofence-item-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+}
+
+.geofence-item-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #fff;
+  margin: 0;
+}
+
+.geofence-item-sub {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin: 2px 0 0 0;
+}
+
+/* ========================================================================== */
+/* RESPONSIVE QUERIES PARA SIDEBAR                                            */
+/* ========================================================================== */
+
+@media (max-width: 1024px) {
+  .monitoring-layout-wrapper {
+    flex-direction: column;
+  }
+  
+  .dashboard-sidebar {
+    width: 100%;
+    min-width: 100%;
+    position: static;
+    top: auto;
+  }
+  
+  .sidebar-nav {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+}
+
+@media (max-width: 680px) {
+  .sidebar-nav {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .family-children-cards-grid,
+  .family-overview-cards-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .geofence-quick-categories {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ========================================================================== */
+/* BOTÓN MEJORAR PLAN Y SECCIÓN DE FACTURACIÓN / TARJETA (SAAS)               */
+/* ========================================================================== */
+
+.sidebar-btn-upgrade {
+  margin-left: auto;
+  padding: 5px 10px;
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.2), rgba(245, 158, 11, 0.25));
+  border: 1px solid rgba(250, 204, 21, 0.5);
+  border-radius: 20px;
+  color: #fde047;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sidebar-btn-upgrade:hover {
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.35), rgba(245, 158, 11, 0.45));
+  border-color: #facc15;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(250, 204, 21, 0.25);
+  color: #fff;
+}
+
+.credit-card-preview-box {
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.credit-card-preview-box:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.4);
+}
+
+.invoice-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  font-size: 0.82rem;
+  color: #cbd5e1;
+  transition: background 0.15s ease;
+}
+
+.invoice-item-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ==========================================================================
+   CENTRO DE CONFIGURACIÓN - SWITCHER DE 2 APARTADOS (DISPOSITIVOS Y PAGO)
+   ========================================================================== */
+.settings-nav-switcher {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px;
+  border-radius: 14px;
+  margin-bottom: 24px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  width: fit-content;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.settings-nav-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 22px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #94a3b8;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  text-decoration: none;
+}
+
+.settings-nav-tab-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
+}
+
+.settings-nav-tab-btn.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 6px 18px rgba(79, 70, 229, 0.4);
+  font-weight: 700;
+}
+
+.settings-tab-icon {
+  font-size: 1.15rem;
+  transition: transform 0.2s ease;
+}
+
+.settings-nav-tab-btn:hover .settings-tab-icon,
+.settings-nav-tab-btn.active .settings-tab-icon {
+  transform: scale(1.15);
+}
+
+/* Sub-paneles de Configuración */
+.settings-subview-panel {
+  display: none;
+}
+
+.settings-subview-panel.active {
+  display: block;
+  animation: fadeInSettings 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeInSettings {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Mejoras visuales a las tarjetas de configuración */
+.settings-card-box {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.settings-card-box:hover {
+  transform: translateY(-2px);
+  border-color: rgba(99, 102, 241, 0.4) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}

@@ -986,8 +986,8 @@ function switchDashboardView(viewId, targetAnchorId = null) {
     switchView('monitoring');
   }
 
-  // Actualizar estado activo en botones de tabs del header y drawer
-  const allNavButtons = document.querySelectorAll('.desktop-nav-tabs .nav-tab-btn, .drawer-nav .drawer-nav-item');
+  // Actualizar estado activo en botones del sidebar, drawer y tabs
+  const allNavButtons = document.querySelectorAll('.dashboard-sidebar .sidebar-nav-item, .desktop-nav-tabs .nav-tab-btn, .drawer-nav .drawer-nav-item');
   allNavButtons.forEach(btn => {
     if (btn.dataset.view === viewId) {
       btn.classList.add('active');
@@ -1022,19 +1022,9 @@ function switchDashboardView(viewId, targetAnchorId = null) {
   }
 
   // Disparar renderizados específicos según la vista seleccionada
-  if (viewId === 'family') {
-    renderFamilyTab();
-  } else if (viewId === 'devices') {
-    renderDevicesTab();
-  } else if (viewId === 'map') {
-    initDedicatedMap();
-  } else if (viewId === 'multimedia') {
-    fetchAndRenderMultimediaGallery();
-  } else if (viewId === 'history') {
-    renderHistoryTab();
-  } else if (viewId === 'settings') {
-    renderSettingsTab();
-  } else if (viewId === 'overview') {
+  if (viewId === 'overview') {
+    renderFamilyOverviewCards();
+    syncChildContextSelectors();
     if (targetAnchorId) {
       setTimeout(() => {
         const el = document.getElementById(targetAnchorId);
@@ -1042,6 +1032,30 @@ function switchDashboardView(viewId, targetAnchorId = null) {
       }, 100);
     } else {
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  } else if (viewId === 'family') {
+    renderFamilyTab();
+    updateSubscriptionUI();
+  } else if (viewId === 'devices') {
+    renderDevicesTab();
+  } else if (viewId === 'map') {
+    initDedicatedMap();
+    syncChildContextSelectors();
+    if (typeof fetchAndRenderGeofences === 'function') {
+      fetchAndRenderGeofences();
+    }
+  } else if (viewId === 'multimedia') {
+    syncChildContextSelectors();
+    fetchAndRenderMultimediaGallery();
+  } else if (viewId === 'history') {
+    syncChildContextSelectors();
+    renderHistoryTab();
+  } else if (viewId === 'settings') {
+    const isBillingActive = document.getElementById('subtabBtnBillingConfig')?.classList.contains('active');
+    if (isBillingActive) {
+      switchSettingsSubtab('billing');
+    } else {
+      switchSettingsSubtab('devices');
     }
   }
 
@@ -1178,7 +1192,120 @@ function startClock() {
 }
 
 // ----------------------------------------------------------------
-// Tab 2: Mi Familia
+// Tab 1: Resumen General Multi-Dispositivo
+// ----------------------------------------------------------------
+function renderFamilyOverviewCards() {
+  const container = document.getElementById('familyOverviewCardsGrid');
+  if (!container) return;
+
+  if (!devicesList || devicesList.length === 0) {
+    container.innerHTML = `
+      <div style="grid-column: 1/-1; text-align: center; padding: 30px; background: rgba(255,255,255,0.02); border-radius: 14px; border: 1px dashed rgba(255,255,255,0.1);">
+        <div style="font-size: 2rem; margin-bottom: 8px;">📱</div>
+        <h4 style="color: #fff; margin: 0 0 4px 0;">No hay dispositivos vinculados aún</h4>
+        <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 12px;">Agrega a tu primer hijo para comenzar la supervisión en vivo.</p>
+        <button class="btn btn-primary btn-sm" onclick="openAddDeviceModal()">➕ Agregar Hijo o Hija</button>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = devicesList.map(dev => {
+    const isSelected = currentDevice && currentDevice.id === dev.id;
+    const isOnline = Boolean(dev.isOnline);
+    const batt = typeof dev.battery === 'number' ? `${dev.battery}%` : '--%';
+    const todayMins = dev.timeTodayMinutes || 0;
+    const limitMins = dev.dailyLimitMinutes || 120;
+    const pct = Math.min(100, Math.round((todayMins / limitMins) * 100));
+    const activeApp = dev.activeApp ? dev.activeApp.name : 'En reposo / Pantalla de inicio';
+    const activeAppIcon = dev.activeApp ? (dev.activeApp.icon || '📱') : '📱';
+    const isLocked = Boolean(dev.isLocked);
+
+    return `
+      <div class="child-overview-card ${isSelected ? 'is-active-device' : ''}" id="overviewCard-${dev.id}">
+        <div class="card-child-header">
+          <div class="child-info-group">
+            <div class="child-avatar-badge">${dev.avatar || '👦'}</div>
+            <div>
+              <h4 class="child-name-text">${dev.childName || dev.name || 'Hijo'}</h4>
+              <p class="child-device-model">${dev.name || 'Teléfono'} • <span style="font-family: monospace;">${dev.id}</span></p>
+            </div>
+          </div>
+          <span class="status-indicator ${isOnline ? 'online' : 'offline'}">
+            <span class="status-dot"></span> <span>${isOnline ? 'En Línea' : 'Desconectado'}</span>
+          </span>
+        </div>
+
+        <div class="card-child-meta-row">
+          <span>🔋 Batería: <strong>${batt}</strong></span>
+          <span>${isLocked ? '🔒 Bloqueado' : '🟢 Desbloqueado'}</span>
+        </div>
+
+        <div class="card-child-progress-box">
+          <div class="card-progress-labels">
+            <span>⏱️ Tiempo Hoy: <strong>${todayMins}m / ${limitMins}m</strong></span>
+            <span style="color: ${pct >= 100 ? '#ef4444' : '#34d399'}; font-weight: 700;">${pct}%</span>
+          </div>
+          <div class="card-progress-bar">
+            <div class="card-progress-fill" style="width: ${pct}%;"></div>
+          </div>
+        </div>
+
+        <div class="card-active-app-row">
+          <span>App activa:</span>
+          <span class="card-app-pill">${activeAppIcon} ${activeApp}</span>
+        </div>
+
+        <div class="card-actions-row">
+          <button class="btn-card-view-screen" onclick="selectAndFocusScreen('${dev.id}')">
+            ${isSelected ? '👁️ Viendo en Vivo' : '👁️ Ver Pantalla'}
+          </button>
+          <button class="btn-card-quick-lock ${isLocked ? 'is-locked' : 'is-unlocked'}" onclick="toggleDeviceLockById('${dev.id}')">
+            ${isLocked ? '🔓 Desbloquear' : '🔒 Bloquear'}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function selectAndFocusScreen(devId) {
+  onDeviceSelected(devId);
+  renderFamilyOverviewCards();
+  const screenEl = document.getElementById('summaryHero') || document.querySelector('.live-supervision-section');
+  if (screenEl) {
+    screenEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+async function toggleDeviceLockById(devId) {
+  try {
+    const dev = devicesList.find(d => d.id === devId);
+    const newLock = dev ? !dev.isLocked : true;
+    const res = await apiFetch(`/api/devices/${devId}/toggle-lock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isLocked: newLock })
+    });
+    if (res.ok) {
+      if (dev) dev.isLocked = newLock;
+      if (currentDevice && currentDevice.id === devId) {
+        currentDevice.isLocked = newLock;
+        updateLockUI(newLock);
+      }
+      renderFamilyOverviewCards();
+      if (document.getElementById('tabViewFamily') && !document.getElementById('tabViewFamily').classList.contains('hidden')) {
+        renderFamilyChildrenCards();
+      }
+      showToast(`Dispositivo ${newLock ? 'bloqueado' : 'desbloqueado'} con éxito`, 'info');
+    }
+  } catch (err) {
+    console.error('Error cambiando bloqueo:', err);
+  }
+}
+
+// ----------------------------------------------------------------
+// Tab 2: Mi Familia (Gestión y 3 Accesos Directos Obligatorios)
 // ----------------------------------------------------------------
 function renderFamilyTab() {
   const familyIdDisplay = document.getElementById('familyIdDisplay');
@@ -1198,24 +1325,34 @@ function renderFamilyTab() {
 
   const planName = (familySubscription && familySubscription.plan) ? (familySubscription.plan === 'free' ? 'Plan Gratuito' : familySubscription.plan === 'family_total' ? 'Familia Total VIP 👑' : 'Familiar Pro ⚡') : 'Familiar Pro ⚡';
   if (familyPlanBadge) familyPlanBadge.textContent = planName;
+
+  // Actualizar sidebar info
+  const sidebarFamilyName = document.getElementById('sidebarFamilyName');
+  if (sidebarFamilyName) {
+    sidebarFamilyName.textContent = (adminUser && adminUser.name) ? `Familia ${adminUser.name.split(' ')[0]}` : 'Mi Familia';
+  }
+  const sidebarFamilyPlan = document.getElementById('sidebarFamilyPlan');
+  if (sidebarFamilyPlan) {
+    sidebarFamilyPlan.textContent = planName;
+  }
+
+  // Renderizar las tarjetas con los 3 accesos directos obligatorios
+  renderFamilyChildrenCards();
 }
 
-// ----------------------------------------------------------------
-// Tab 4: Dispositivos (Agregar y Configurar)
-// ----------------------------------------------------------------
-function renderDevicesTab() {
-  const container = document.getElementById('devicesTabGrid');
+function renderFamilyChildrenCards() {
+  const container = document.getElementById('familyChildrenCardsGrid');
   if (!container) return;
 
   if (!devicesList || devicesList.length === 0) {
     container.innerHTML = `
-      <div style="grid-column: 1/-1; text-align: center; padding: 40px 20px; background: rgba(255,255,255,0.02); border-radius: 14px; border: 1px dashed rgba(255,255,255,0.1);">
-        <div style="font-size: 2.5rem; margin-bottom: 10px;">📱</div>
-        <h4 style="color: #fff; margin: 0 0 6px 0;">No hay dispositivos vinculados</h4>
-        <p style="color: var(--text-muted); font-size: 0.85rem; max-width: 400px; margin: 0 auto 16px auto;">
-          Instala KidsShield en el teléfono de tu hijo y escanea el código QR para comenzar a supervisar.
+      <div style="grid-column: 1/-1; text-align: center; padding: 36px 20px; background: rgba(255,255,255,0.02); border-radius: 16px; border: 1px dashed rgba(255,255,255,0.1);">
+        <div style="font-size: 2.4rem; margin-bottom: 10px;">👨‍👩‍👧‍👦</div>
+        <h4 style="color: #fff; margin: 0 0 6px 0;">Aún no has agregado hijos o dispositivos</h4>
+        <p style="color: #94a3b8; font-size: 0.85rem; max-width: 420px; margin: 0 auto 16px auto;">
+          Agrega a tu hijo o hija para asignarle un teléfono móvil y comenzar a supervisar su ubicación, aplicaciones y multimedia.
         </p>
-        <button class="btn btn-primary btn-sm" onclick="openPairingQrModal()">🔗 Vincular Dispositivo con QR</button>
+        <button class="btn btn-primary btn-sm" onclick="openAddDeviceModal()">➕ Agregar Hijo o Hija</button>
       </div>
     `;
     return;
@@ -1228,15 +1365,13 @@ function renderDevicesTab() {
     const lastSeen = dev.lastSeen ? new Date(dev.lastSeen).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'Sin reporte';
 
     return `
-      <div class="device-card-box ${isSelected ? 'active-device-card' : ''}" style="background: ${isSelected ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.03)'}; border: 1px solid ${isSelected ? '#6366f1' : 'rgba(255,255,255,0.08)'}; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(99,102,241,0.2); display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
-              ${dev.avatar || '📱'}
-            </div>
+      <div class="child-family-card ${isSelected ? 'is-active-device' : ''}" id="familyChildCard-${dev.id}">
+        <div class="family-card-top">
+          <div class="family-card-profile">
+            <div class="family-card-avatar">${dev.avatar || '👦'}</div>
             <div>
-              <h4 style="color: #fff; margin: 0; font-size: 1.05rem;">${dev.name || 'Teléfono'}</h4>
-              <p style="color: #94a3b8; font-size: 0.8rem; margin: 2px 0 0 0;">${dev.childName || 'Hijo'} • <span style="font-family: monospace;">${dev.id}</span></p>
+              <h4 class="family-card-name">${dev.childName || dev.name || 'Hijo'}</h4>
+              <p class="family-card-devname">${dev.name || 'Teléfono'} • <span style="font-family: monospace;">${dev.id}</span></p>
             </div>
           </div>
           <span class="status-indicator ${isOnline ? 'online' : 'offline'}">
@@ -1244,21 +1379,36 @@ function renderDevicesTab() {
           </span>
         </div>
 
-        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: #cbd5e1; background: rgba(0,0,0,0.2); padding: 8px 12px; border-radius: 8px;">
+        <div class="family-card-metrics">
           <span>🔋 Batería: <strong>${batt}</strong></span>
-          <span>🕒 Último visto: <strong>${lastSeen}</strong></span>
-          <span>${dev.isLocked ? '🔒 Bloqueado' : '🟢 Libre'}</span>
+          <span>🕒 Visto: <strong>${lastSeen}</strong></span>
+          <span>Estado: <strong>${dev.isLocked ? '🔒 Bloqueado' : '🟢 Activo'}</strong></span>
+          <span>GPS: <strong>${dev.gpsEnabled !== false ? '🛰️ Habilitado' : '⚪ Inactivo'}</strong></span>
         </div>
 
-        <div style="display: flex; gap: 8px; margin-top: 4px;">
-          <button class="btn ${isSelected ? 'btn-primary' : 'btn-secondary'} btn-sm" style="flex: 1;" onclick="selectAndGoOverview('${dev.id}')">
-            ${isSelected ? '✓ Supervisando Ahora' : '👁️ Supervisar'}
+        <!-- 3 Accesos Directos Obligatorios -->
+        <div class="family-card-shortcuts-row">
+          <button class="btn-family-shortcut btn-shortcut-map" onclick="selectAndGoMap('${dev.id}')" title="Ver ubicación y geocercas en mapa satelital">
+            <span class="shortcut-icon">📍</span>
+            <span>Ver en Mapa</span>
           </button>
-          <button class="btn btn-secondary btn-sm" title="Configurar dispositivo" onclick="selectAndGoSettings('${dev.id}')">
-            ⚙️
+          <button class="btn-family-shortcut btn-shortcut-multi" onclick="selectAndGoMultimedia('${dev.id}')" title="Ver capturas, videos y audios">
+            <span class="shortcut-icon">🎬</span>
+            <span>Ver Multimedia</span>
           </button>
-          <button class="btn btn-danger-outline btn-sm" title="Desvincular teléfono" onclick="openUnlinkDeviceModal()">
-            🗑️
+          <button class="btn-family-shortcut btn-shortcut-config" onclick="selectAndGoSettings('${dev.id}')" title="Ajustar límites, GPS y horarios">
+            <span class="shortcut-icon">⚙️</span>
+            <span>Configurar</span>
+          </button>
+        </div>
+
+        <!-- Acciones Secundarias (QR y Desvincular) -->
+        <div class="family-card-aux-row">
+          <button class="btn btn-secondary btn-sm" onclick="openPairingQrForDevice('${dev.id}')" style="font-size: 0.78rem;">
+            🔗 Código QR
+          </button>
+          <button class="btn btn-danger-outline btn-sm" onclick="openUnlinkForDevice('${dev.id}')" style="font-size: 0.78rem;">
+            🗑️ Desvincular
           </button>
         </div>
       </div>
@@ -1266,14 +1416,44 @@ function renderDevicesTab() {
   }).join('');
 }
 
-function selectAndGoOverview(devId) {
+function selectAndGoMap(devId) {
   onDeviceSelected(devId);
-  switchDashboardView('overview');
+  switchDashboardView('map');
+}
+
+function selectAndGoMultimedia(devId) {
+  onDeviceSelected(devId);
+  switchDashboardView('multimedia');
 }
 
 function selectAndGoSettings(devId) {
   onDeviceSelected(devId);
   switchDashboardView('settings');
+  if (typeof switchSettingsSubtab === 'function') {
+    switchSettingsSubtab('devices');
+  }
+}
+
+function openPairingQrForDevice(devId) {
+  onDeviceSelected(devId);
+  openPairingQrModal();
+}
+
+function openUnlinkForDevice(devId) {
+  onDeviceSelected(devId);
+  openUnlinkDeviceModal();
+}
+
+// ----------------------------------------------------------------
+// Tab 4: Dispositivos (Mantenido para compatibilidad)
+// ----------------------------------------------------------------
+function renderDevicesTab() {
+  renderFamilyChildrenCards();
+}
+
+function selectAndGoOverview(devId) {
+  onDeviceSelected(devId);
+  switchDashboardView('overview');
 }
 
 // ----------------------------------------------------------------
@@ -1685,6 +1865,70 @@ function renderSettingsTab() {
   if (parentPin) parentPin.value = currentDevice.parentPin || '1234';
 }
 
+// =========================================================================
+// GESTIÓN DE SUB-APARTADOS EN CONFIGURACIÓN (1. DISPOSITIVOS / 2. PAGO Y PLAN)
+// =========================================================================
+function setupSettingsSubtabs() {
+  const btnDevices = document.getElementById('subtabBtnDevicesConfig');
+  const btnBilling = document.getElementById('subtabBtnBillingConfig');
+
+  if (btnDevices) {
+    btnDevices.addEventListener('click', (e) => {
+      e.preventDefault();
+      switchSettingsSubtab('devices');
+    });
+  }
+
+  if (btnBilling) {
+    btnBilling.addEventListener('click', (e) => {
+      e.preventDefault();
+      switchSettingsSubtab('billing');
+    });
+  }
+}
+
+function switchSettingsSubtab(subtab) {
+  const btnDevices = document.getElementById('subtabBtnDevicesConfig');
+  const btnBilling = document.getElementById('subtabBtnBillingConfig');
+  const secDevices = document.getElementById('settingsDevicesSection');
+  const secBilling = document.getElementById('settingsBillingSection');
+
+  if (!btnDevices || !btnBilling || !secDevices || !secBilling) return;
+
+  if (subtab === 'devices') {
+    btnDevices.classList.add('active');
+    btnDevices.setAttribute('aria-selected', 'true');
+    btnBilling.classList.remove('active');
+    btnBilling.setAttribute('aria-selected', 'false');
+
+    secDevices.classList.add('active');
+    secDevices.style.display = 'block';
+    secBilling.classList.remove('active');
+    secBilling.style.display = 'none';
+
+    syncChildContextSelectors();
+    renderSettingsTab();
+  } else if (subtab === 'billing') {
+    btnBilling.classList.add('active');
+    btnBilling.setAttribute('aria-selected', 'true');
+    btnDevices.classList.remove('active');
+    btnDevices.setAttribute('aria-selected', 'false');
+
+    secBilling.classList.add('active');
+    secBilling.style.display = 'block';
+    secDevices.classList.remove('active');
+    secDevices.style.display = 'none';
+
+    loadBillingAndPaymentDetails();
+  }
+}
+
+window.switchSettingsSubtab = switchSettingsSubtab;
+window.goToBillingSettings = function() {
+  switchDashboardView('settings');
+  switchSettingsSubtab('billing');
+};
+
 // Event Bindings
 function bindEvents() {
   try {
@@ -1778,7 +2022,96 @@ function bindEvents() {
   const btnMapTabGeofences = document.getElementById('btnMapTabGeofences');
   if (btnMapTabGeofences) btnMapTabGeofences.addEventListener('click', () => {
     fetchAndRenderGeofences();
-    showToast('Geocercas de Casa y Colegio actualizadas en el mapa', 'info');
+    showToast('Geocercas actualizadas en el mapa', 'info');
+  });
+
+  // Sidebar Navigation (Opción 2)
+  const sidebarNavItems = document.querySelectorAll('.dashboard-sidebar .sidebar-nav-item');
+  sidebarNavItems.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const view = btn.dataset.view;
+      if (view) switchDashboardView(view);
+    });
+  });
+
+  const sidebarBtnLogout = document.getElementById('sidebarBtnLogout');
+  if (sidebarBtnLogout) {
+    sidebarBtnLogout.addEventListener('click', logoutAdmin);
+  }
+
+  // Selectores contextuales de hijo sincronizados
+  const contextSelectors = [
+    'overviewLiveDeviceSelect',
+    'mapDeviceSelect',
+    'multimediaDeviceSelect',
+    'historyDeviceSelect',
+    'settingsDeviceSelect'
+  ];
+  contextSelectors.forEach(id => {
+    const sel = document.getElementById(id);
+    if (sel) {
+      sel.addEventListener('change', (e) => {
+        onDeviceSelected(e.target.value);
+      });
+    }
+  });
+
+  // Botones Agregar Hijo/a en Resumen y Mi Familia
+  const btnOverviewAddChild = document.getElementById('btnOverviewAddChild');
+  if (btnOverviewAddChild) btnOverviewAddChild.addEventListener('click', openAddDeviceModal);
+
+  const btnFamilyAddChild = document.getElementById('btnFamilyAddChild');
+  if (btnFamilyAddChild) btnFamilyAddChild.addEventListener('click', openAddDeviceModal);
+
+  // Gestor Interactivo de Geocercas y Lugares Seguros
+  const btnOpenGeofenceModal = document.getElementById('btnOpenGeofenceManagerModal');
+  if (btnOpenGeofenceModal) btnOpenGeofenceModal.addEventListener('click', openGeofenceManagerModal);
+
+  const btnCloseGeofenceModal = document.getElementById('btnCloseGeofenceModal');
+  if (btnCloseGeofenceModal) btnCloseGeofenceModal.addEventListener('click', closeGeofenceManagerModal);
+
+  const btnCloseGeofenceModalFooter = document.getElementById('btnCloseGeofenceModalFooter');
+  if (btnCloseGeofenceModalFooter) btnCloseGeofenceModalFooter.addEventListener('click', closeGeofenceManagerModal);
+
+  const btnSaveGeofence = document.getElementById('btnSaveGeofence');
+  if (btnSaveGeofence) btnSaveGeofence.addEventListener('click', saveNewGeofence);
+
+  const btnUseCurLocGeofence = document.getElementById('btnUseCurrentDeviceLocationForGeofence');
+  if (btnUseCurLocGeofence) {
+    btnUseCurLocGeofence.addEventListener('click', () => {
+      if (currentDevice && currentDevice.location && typeof currentDevice.location.latitude === 'number') {
+        const latInput = document.getElementById('inputGeofenceLat');
+        const lngInput = document.getElementById('inputGeofenceLng');
+        if (latInput) latInput.value = currentDevice.location.latitude;
+        if (lngInput) lngInput.value = currentDevice.location.longitude;
+        showToast('🎯 Coordenadas actuales del teléfono aplicadas', 'info');
+      } else {
+        alert('El dispositivo aún no ha transmitido coordenadas GPS. Ingresa las coordenadas manualmente.');
+      }
+    });
+  }
+
+  const rangeGeofenceRadius = document.getElementById('rangeGeofenceRadius');
+  if (rangeGeofenceRadius) {
+    rangeGeofenceRadius.addEventListener('input', (e) => {
+      const badge = document.getElementById('geofenceRadiusBadge');
+      if (badge) badge.textContent = `${e.target.value} metros`;
+    });
+  }
+
+  // Botones de Categorías Rápidas de Geocercas
+  const catButtons = document.querySelectorAll('#geofenceQuickCategories .btn-geofence-cat');
+  catButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      catButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const catName = btn.dataset.name || 'Lugar Seguro';
+      const catIcon = btn.dataset.icon || '📍';
+      const nameInput = document.getElementById('inputGeofenceName');
+      if (nameInput) {
+        nameInput.value = `${catName} ${catIcon}`;
+      }
+    });
   });
 
   // Pestaña Multimedia: Filtros y Acciones
@@ -2486,6 +2819,49 @@ function bindEvents() {
     btnSelectPlanFamilyTotal.addEventListener('click', () => changeSubscriptionPlan('family_total'));
   }
 
+  // Mejorar Plan triggers
+  const openSub = () => {
+    loadSubscriptionInfo();
+    if (modalSubscription) modalSubscription.classList.add('active');
+  };
+  const sidebarBtnUpgradePlan = document.getElementById('sidebarBtnUpgradePlan');
+  if (sidebarBtnUpgradePlan) sidebarBtnUpgradePlan.addEventListener('click', openSub);
+  const btnFamilyUpgradePlan = document.getElementById('btnFamilyUpgradePlan');
+  if (btnFamilyUpgradePlan) btnFamilyUpgradePlan.addEventListener('click', openSub);
+  const btnSettingsUpgradePlan = document.getElementById('btnSettingsUpgradePlan');
+  if (btnSettingsUpgradePlan) btnSettingsUpgradePlan.addEventListener('click', openSub);
+
+  // Billing & Card Modal triggers
+  const modalUpdateCard = document.getElementById('modalUpdateCard');
+  const btnOpenUpdateCardModal = document.getElementById('btnOpenUpdateCardModal');
+  if (btnOpenUpdateCardModal) {
+    btnOpenUpdateCardModal.addEventListener('click', () => {
+      if (modalUpdateCard) modalUpdateCard.classList.add('active');
+    });
+  }
+  const btnCloseUpdateCardModal = document.getElementById('btnCloseUpdateCardModal');
+  if (btnCloseUpdateCardModal) {
+    btnCloseUpdateCardModal.addEventListener('click', () => {
+      if (modalUpdateCard) modalUpdateCard.classList.remove('active');
+    });
+  }
+  const btnCancelUpdateCard = document.getElementById('btnCancelUpdateCard');
+  if (btnCancelUpdateCard) {
+    btnCancelUpdateCard.addEventListener('click', () => {
+      if (modalUpdateCard) modalUpdateCard.classList.remove('active');
+    });
+  }
+  const btnSaveCardDetails = document.getElementById('btnSaveCardDetails');
+  if (btnSaveCardDetails) {
+    btnSaveCardDetails.addEventListener('click', handleSaveCardDetails);
+  }
+
+  // Toggle Auto-Renew Switch
+  const toggleAutoRenewSwitch = document.getElementById('toggleAutoRenewSwitch');
+  if (toggleAutoRenewSwitch) {
+    toggleAutoRenewSwitch.addEventListener('change', handleToggleAutoRenew);
+  }
+
   // GCP Config Listeners
   if (btnToggleGcpConfig) {
     btnToggleGcpConfig.addEventListener('click', () => {
@@ -2510,6 +2886,9 @@ function bindEvents() {
   if (btnSaveGoogleClientIdModal) {
     btnSaveGoogleClientIdModal.addEventListener('click', saveGoogleClientIdFromModal);
   }
+
+  // Inicializar subtabs de Configuración
+  setupSettingsSubtabs();
   } catch (bindErr) {
     console.error('[Events] Error in bindEvents:', bindErr);
   }
@@ -2572,6 +2951,7 @@ async function onDeviceSelected(deviceId, updateDropdown = true) {
   if (!deviceId) {
     currentDevice = null;
     renderNoDeviceState();
+    syncChildContextSelectors();
     return;
   }
   localStorage.setItem('kidsshield_active_device_id', deviceId);
@@ -2579,48 +2959,66 @@ async function onDeviceSelected(deviceId, updateDropdown = true) {
     deviceSelectorDropdown.value = deviceId;
   }
   await fetchDeviceData(deviceId);
+  syncChildContextSelectors();
   if (isRouteHistoryVisible) {
     fetchAndRenderRouteHistory();
   }
   if (currentDevice) {
-    showToast(`Supervisando ahora: ${currentDevice.name}`, 'info');
+    renderFamilyOverviewCards();
+    showToast(`Supervisando ahora: ${currentDevice.childName || currentDevice.name}`, 'info');
   }
 }
 
 function openAddDeviceModal() {
-  if (inputNewDeviceId) inputNewDeviceId.value = `KID-PHONE-0${(devicesList.length + 1) || 2}`;
-  if (inputNewDeviceName) inputNewDeviceName.value = '';
-  if (inputNewDeviceModel) inputNewDeviceModel.value = '';
-  if (inputNewDevicePin) inputNewDevicePin.value = '1234';
+  const nameInput = document.getElementById('inputNewDeviceName');
+  const childInput = document.getElementById('inputNewDeviceChildName');
+  const avatarInput = document.getElementById('inputNewDeviceAvatar');
+  if (nameInput) nameInput.value = '';
+  if (childInput) childInput.value = '';
+  if (avatarInput) avatarInput.value = '👦';
   if (modalAddDevice) modalAddDevice.classList.add('active');
 }
 
 async function createNewDevice() {
-  const id = inputNewDeviceId.value.trim().toUpperCase();
-  const name = inputNewDeviceName.value.trim();
-  const model = inputNewDeviceModel.value.trim();
-  const pin = inputNewDevicePin.value.trim() || '1234';
+  const nameInput = document.getElementById('inputNewDeviceName');
+  const childInput = document.getElementById('inputNewDeviceChildName');
+  const avatarInput = document.getElementById('inputNewDeviceAvatar');
 
-  if (!id || !name) {
-    alert('Por favor ingresa un ID y un Nombre para el dispositivo.');
+  const rawName = nameInput ? nameInput.value.trim() : '';
+  const rawChild = childInput ? childInput.value.trim() : '';
+  const avatar = avatarInput ? avatarInput.value : '👦';
+
+  if (!rawName && !rawChild) {
+    alert('Por favor ingresa un nombre para el teléfono o menor a supervisar.');
     return;
   }
+
+  const name = rawName || `Teléfono de ${rawChild}`;
+  const childName = rawChild || rawName;
 
   try {
     const res = await apiFetch('/api/devices', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, name, model, childName: name, parentPin: pin })
+      body: JSON.stringify({ name, childName, avatar })
     });
     if (res.ok) {
       const data = await res.json();
-      modalAddDevice.classList.remove('active');
+      const createdDevice = data.device || {};
+      const newId = createdDevice.id;
+      if (modalAddDevice) modalAddDevice.classList.remove('active');
       showToast(`Dispositivo "${name}" registrado con éxito`, 'success');
-      await loadDevicesList(id);
-      openPairingQrModal();
+      await loadDevicesList(newId);
+      await openPairingQrModal(newId);
     } else {
       const err = await res.json();
-      alert(`Error al registrar dispositivo: ${err.error || 'Intente nuevamente'}`);
+      if (err.requiresUpgrade) {
+        showToast(err.error, 'warning');
+        loadSubscriptionInfo();
+        if (modalSubscription) modalSubscription.classList.add('active');
+      } else {
+        alert(`Error al registrar dispositivo: ${err.error || 'Intente nuevamente'}`);
+      }
     }
   } catch (err) {
     console.error('Error registrando dispositivo', err);
@@ -2629,62 +3027,81 @@ async function createNewDevice() {
 }
 
 // Pairing QR Modal Functions
-async function openPairingQrModal() {
-  const deviceId = (currentDevice && currentDevice.id) ? currentDevice.id : 'KID-PHONE-01';
+async function openPairingQrModal(deviceIdParam) {
+  let targetDevice = null;
+  if (deviceIdParam && typeof deviceIdParam === 'string') {
+    targetDevice = devicesList.find(d => d.id === deviceIdParam) || currentDevice;
+  } else {
+    targetDevice = currentDevice || (devicesList && devicesList[0]) || null;
+  }
+
+  const deviceId = (targetDevice && targetDevice.id) ? targetDevice.id : (deviceIdParam || 'KID-PHONE-01');
+  const deviceName = targetDevice ? (targetDevice.name || targetDevice.childName) : `Dispositivo (${deviceId})`;
+  const parentPin = (targetDevice && targetDevice.parentPin) ? targetDevice.parentPin : '1234';
+
   let serverHost = window.location.hostname;
   let serverPort = window.location.port || '3000';
   let fullServerUrl = `${window.location.protocol}//${serverHost}:${serverPort}`;
-  let qrDataUrl = '';
 
-  // Inicializar la imagen inmediatamente con timestamp para evitar caché
-  if (qrCodeImg) {
-    qrCodeImg.src = `/api/devices/${deviceId}/qr.png?t=${Date.now()}`;
-    qrCodeImg.style.display = 'block';
-  }
-
-  try {
-    const res = await fetch(`/api/devices/${deviceId}/pairing-info`);
-    if (res.ok) {
-      const info = await res.json();
-      if (info.serverUrl) fullServerUrl = info.serverUrl;
-      if (info.qrDataUrl && qrCodeImg) {
-        qrCodeImg.src = info.qrDataUrl;
-      }
-      if (info.deviceName && qrModalDeviceName) qrModalDeviceName.textContent = info.deviceName;
-      if (info.parentPin && qrModalDevicePin) qrModalDevicePin.textContent = info.parentPin;
-    }
-  } catch (e) {
-    console.warn('Usando URL local para QR', e);
-  }
+  if (qrModalDeviceName) qrModalDeviceName.textContent = deviceName;
+  if (qrModalDeviceId) qrModalDeviceId.textContent = deviceId;
+  if (qrModalServerUrl) qrModalServerUrl.textContent = fullServerUrl;
+  if (qrModalDevicePin) qrModalDevicePin.textContent = parentPin;
 
   const payload = {
     type: 'KIDSSHIELD_PAIRING',
     serverUrl: fullServerUrl,
     deviceId: deviceId,
-    pin: (currentDevice && currentDevice.parentPin) ? currentDevice.parentPin : '1234'
+    pin: parentPin
   };
-
   const payloadString = JSON.stringify(payload);
 
-  if (qrModalDeviceName && currentDevice) qrModalDeviceName.textContent = currentDevice.name || 'Dispositivo';
-  if (qrModalDeviceId) qrModalDeviceId.textContent = deviceId;
-  if (qrModalServerUrl) qrModalServerUrl.textContent = fullServerUrl;
-  if (qrModalDevicePin && currentDevice) qrModalDevicePin.textContent = currentDevice.parentPin || '1234';
-
-  if (qrCodeCanvas && typeof QRCode !== 'undefined') {
-    QRCode.toCanvas(qrCodeCanvas, payloadString, {
-      width: 210,
-      margin: 2,
-      color: {
-        dark: '#0f172a',
-        light: '#ffffff'
+  // 1. Generación inmediata en cliente con librería QRCode si está disponible
+  let clientQrReady = false;
+  if (typeof QRCode !== 'undefined' && QRCode.toDataURL) {
+    try {
+      const dataUrl = await QRCode.toDataURL(payloadString, {
+        width: 240,
+        margin: 2,
+        color: { dark: '#0f172a', light: '#ffffff' }
+      });
+      if (qrCodeImg) {
+        qrCodeImg.src = dataUrl;
+        qrCodeImg.style.display = 'block';
+        clientQrReady = true;
       }
-    }, (error) => {
-      if (error) console.error('Error al generar código QR en canvas:', error);
-    });
+    } catch (qrErr) {
+      console.warn('Fallback a servidor para QR:', qrErr);
+    }
   }
 
-  modalPairingQr.classList.add('active');
+  // 2. Consulta al servidor para obtener datos oficiales e IP de red local
+  try {
+    const res = await fetch(`/api/devices/${deviceId}/pairing-info`);
+    if (res.ok) {
+      const info = await res.json();
+      if (info.serverUrl) {
+        fullServerUrl = info.serverUrl;
+        if (qrModalServerUrl) qrModalServerUrl.textContent = fullServerUrl;
+      }
+      if (info.deviceName && qrModalDeviceName) qrModalDeviceName.textContent = info.deviceName;
+      if (info.parentPin && qrModalDevicePin) qrModalDevicePin.textContent = info.parentPin;
+      if (info.qrDataUrl && qrCodeImg) {
+        qrCodeImg.src = info.qrDataUrl;
+        qrCodeImg.style.display = 'block';
+      }
+    } else if (!clientQrReady && qrCodeImg) {
+      qrCodeImg.src = `/api/devices/${deviceId}/qr.png?t=${Date.now()}`;
+      qrCodeImg.style.display = 'block';
+    }
+  } catch (e) {
+    if (!clientQrReady && qrCodeImg) {
+      qrCodeImg.src = `/api/devices/${deviceId}/qr.png?t=${Date.now()}`;
+      qrCodeImg.style.display = 'block';
+    }
+  }
+
+  if (modalPairingQr) modalPairingQr.classList.add('active');
 }
 
 function copyPairingPayload() {
@@ -2990,6 +3407,220 @@ function toggleGeofencesVisibility() {
   } else {
     clearGeofencesFromMap();
     showToast('Zonas seguras ocultadas', 'info');
+  }
+}
+
+// ----------------------------------------------------------------
+// Gestor Interactivo de Lugares y Geocercas (Escuela, Casa, Familiares)
+// ----------------------------------------------------------------
+let modalGeofencesList = [];
+
+function openGeofenceManagerModal() {
+  if (!currentDevice) {
+    showToast('Selecciona primero un dispositivo para definir lugares seguros', 'warning');
+    return;
+  }
+  const modal = document.getElementById('modalGeofenceManager');
+  if (!modal) return;
+
+  // Precargar coordenadas si están disponibles
+  const latInput = document.getElementById('inputGeofenceLat');
+  const lngInput = document.getElementById('inputGeofenceLng');
+  if (currentDevice.location && typeof currentDevice.location.latitude === 'number') {
+    if (latInput) latInput.value = currentDevice.location.latitude;
+    if (lngInput) lngInput.value = currentDevice.location.longitude;
+  } else {
+    if (latInput && !latInput.value) latInput.value = -33.4420;
+    if (lngInput && !lngInput.value) lngInput.value = -70.6550;
+  }
+
+  loadAndRenderGeofencesInModal();
+  modal.classList.add('active');
+}
+
+function closeGeofenceManagerModal() {
+  const modal = document.getElementById('modalGeofenceManager');
+  if (modal) modal.classList.remove('active');
+}
+
+async function loadAndRenderGeofencesInModal() {
+  const listContainer = document.getElementById('geofencesSavedList');
+  if (!listContainer || !currentDevice) return;
+
+  listContainer.innerHTML = '<div style="color: #94a3b8; font-size: 0.85rem; padding: 12px 0;">Cargando lugares...</div>';
+
+  try {
+    const res = await fetch(`/api/devices/${currentDevice.id}/geofences`);
+    if (res.ok) {
+      modalGeofencesList = await res.json();
+      renderGeofencesListInModal(modalGeofencesList);
+      if (areGeofencesVisible && leafletMap) {
+        renderGeofencesOnMap(modalGeofencesList);
+      }
+    }
+  } catch (err) {
+    console.error('Error cargando lista de geocercas:', err);
+    listContainer.innerHTML = '<div style="color: #ef4444; font-size: 0.85rem;">Error al cargar geocercas</div>';
+  }
+}
+
+function renderGeofencesListInModal(geofences) {
+  const listContainer = document.getElementById('geofencesSavedList');
+  if (!listContainer) return;
+
+  if (!geofences || geofences.length === 0) {
+    listContainer.innerHTML = `
+      <div style="text-align: center; padding: 20px; background: rgba(255,255,255,0.02); border-radius: 10px; color: #94a3b8; font-size: 0.85rem;">
+        No hay lugares guardados para este teléfono aún. Completa el formulario arriba para agregar Escuela, Casa u otros lugares.
+      </div>
+    `;
+    return;
+  }
+
+  listContainer.innerHTML = geofences.map(geo => {
+    const isSchool = geo.name.toLowerCase().includes('colegio') || geo.name.toLowerCase().includes('escuela');
+    const isHome = geo.name.toLowerCase().includes('casa') || geo.name.toLowerCase().includes('hogar');
+    const icon = isSchool ? '🏫' : (isHome ? '🏠' : (geo.name.includes('⚽') ? '⚽' : (geo.name.includes('👵') ? '👵' : '📍')));
+    
+    return `
+      <div class="geofence-saved-item" id="geoItem-${geo.id}">
+        <div class="geofence-item-meta">
+          <div class="geofence-item-icon">${icon}</div>
+          <div>
+            <h5 class="geofence-item-name">${geo.name}</h5>
+            <p class="geofence-item-sub">Radio: ${geo.radiusMeters || 200}m • Coords: ${Number(geo.latitude).toFixed(4)}, ${Number(geo.longitude).toFixed(4)}</p>
+          </div>
+        </div>
+        <button class="btn btn-danger-outline btn-sm" onclick="deleteGeofenceItem('${geo.id}')" title="Eliminar lugar seguro">
+          🗑️ Eliminar
+        </button>
+      </div>
+    `;
+  }).join('');
+}
+
+async function saveNewGeofence() {
+  if (!currentDevice) return;
+
+  const nameInput = document.getElementById('inputGeofenceName');
+  const latInput = document.getElementById('inputGeofenceLat');
+  const lngInput = document.getElementById('inputGeofenceLng');
+  const radiusInput = document.getElementById('rangeGeofenceRadius');
+  const checkEntry = document.getElementById('checkGeofenceAlertEntry');
+  const checkExit = document.getElementById('checkGeofenceAlertExit');
+
+  const name = nameInput ? nameInput.value.trim() : '';
+  const lat = parseFloat(latInput ? latInput.value : 0);
+  const lng = parseFloat(lngInput ? lngInput.value : 0);
+  const radius = parseInt(radiusInput ? radiusInput.value : 250, 10);
+  const alertOnEntry = checkEntry ? checkEntry.checked : true;
+  const alertOnExit = checkExit ? checkExit.checked : true;
+
+  if (!name) {
+    alert('Por favor ingresa un nombre para el lugar seguro (ej: Colegio, Casa)');
+    return;
+  }
+  if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
+    alert('Por favor ingresa coordenadas GPS válidas o pulsa "🎯 Usar Posición Actual"');
+    return;
+  }
+
+  try {
+    const payload = {
+      id: `GEO-${Date.now()}`,
+      name,
+      latitude: lat,
+      longitude: lng,
+      radiusMeters: radius,
+      alertOnEntry,
+      alertOnExit
+    };
+
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/geofences`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      showToast(`Lugar seguro "${name}" guardado con éxito`, 'success');
+      if (nameInput) nameInput.value = '';
+      await loadAndRenderGeofencesInModal();
+      if (typeof fetchAndRenderGeofences === 'function') {
+        fetchAndRenderGeofences();
+      }
+    } else {
+      alert('Error al guardar el lugar. Revisa los datos.');
+    }
+  } catch (err) {
+    console.error('Error guardando geocerca:', err);
+    alert('Error de conexión al guardar el lugar.');
+  }
+}
+
+async function deleteGeofenceItem(geoId) {
+  if (!currentDevice) return;
+  if (!confirm('¿Deseas eliminar este lugar seguro?')) return;
+
+  try {
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/geofences/${geoId}`, {
+      method: 'DELETE'
+    });
+    if (res.ok) {
+      showToast('Lugar eliminado correctamente', 'info');
+      await loadAndRenderGeofencesInModal();
+      if (typeof fetchAndRenderGeofences === 'function') {
+        fetchAndRenderGeofences();
+      }
+    }
+  } catch (err) {
+    console.error('Error eliminando geocerca:', err);
+  }
+}
+
+// ----------------------------------------------------------------
+// Sincronización de Selectores Contextuales de Hijo
+// ----------------------------------------------------------------
+function syncChildContextSelectors() {
+  const selectIds = [
+    'overviewLiveDeviceSelect',
+    'mapDeviceSelect',
+    'multimediaDeviceSelect',
+    'historyDeviceSelect',
+    'settingsDeviceSelect',
+    'deviceSelectorDropdown'
+  ];
+
+  selectIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    const currentVal = currentDevice ? currentDevice.id : '';
+    el.innerHTML = '';
+
+    if (!devicesList || devicesList.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '📱 Sin dispositivos vinculados';
+      el.appendChild(opt);
+      return;
+    }
+
+    devicesList.forEach(dev => {
+      const opt = document.createElement('option');
+      opt.value = dev.id;
+      const statusIcon = dev.isOnline ? '🟢' : '⚪';
+      opt.textContent = `${dev.avatar || '📱'} ${dev.childName || dev.name} (${statusIcon})`;
+      if (dev.id === currentVal) opt.selected = true;
+      el.appendChild(opt);
+    });
+
+    el.value = currentVal;
+  });
+
+  const viewerName = document.getElementById('currentViewerChildName');
+  if (viewerName && currentDevice) {
+    viewerName.textContent = currentDevice.childName || currentDevice.name || 'Hijo';
   }
 }
 
@@ -3715,6 +4346,71 @@ function updateSubscriptionUI() {
     adminProfileDeviceLimitText.textContent = `Hasta ${currentSubscription.maxDevices || 5} dispositivos`;
   }
 
+  // Actualizar tarjeta de familia en Sidebar
+  const sidebarFamilyPlan = document.getElementById('sidebarFamilyPlan');
+  const sidebarBtnUpgradePlan = document.getElementById('sidebarBtnUpgradePlan');
+
+  if (sidebarFamilyPlan) {
+    sidebarFamilyPlan.textContent = displayName;
+    sidebarFamilyPlan.className = 'sidebar-family-plan-badge';
+    if (plan === 'family_total') {
+      sidebarFamilyPlan.classList.add('plan-vip');
+    } else if (plan === 'pro') {
+      sidebarFamilyPlan.classList.add('plan-pro');
+    } else {
+      sidebarFamilyPlan.classList.add('plan-free');
+    }
+  }
+
+  if (sidebarBtnUpgradePlan) {
+    sidebarBtnUpgradePlan.className = 'sidebar-btn-upgrade';
+    if (plan === 'free') {
+      sidebarBtnUpgradePlan.innerHTML = '⚡ Mejorar';
+      sidebarBtnUpgradePlan.title = 'Mejora a Familiar Pro para más dispositivos y video';
+      sidebarBtnUpgradePlan.classList.add('btn-upgrade-highlight');
+      sidebarBtnUpgradePlan.style.display = 'inline-flex';
+    } else if (plan === 'pro') {
+      sidebarBtnUpgradePlan.innerHTML = '⭐ Subir a VIP';
+      sidebarBtnUpgradePlan.title = 'Mejora a Familia Total VIP (10 dispositivos y geocercas ilimitadas)';
+      sidebarBtnUpgradePlan.classList.add('btn-upgrade-highlight');
+      sidebarBtnUpgradePlan.style.display = 'inline-flex';
+    } else {
+      sidebarBtnUpgradePlan.innerHTML = 'Gestionar';
+      sidebarBtnUpgradePlan.title = 'Administrar suscripción VIP';
+      sidebarBtnUpgradePlan.style.display = 'inline-flex';
+    }
+  }
+
+  // Actualizar vista Mi Familia
+  const familyPlanBadge = document.getElementById('familyPlanBadge');
+  if (familyPlanBadge) {
+    familyPlanBadge.textContent = displayName;
+  }
+
+  const btnFamilyUpgradePlan = document.getElementById('btnFamilyUpgradePlan');
+  if (btnFamilyUpgradePlan) {
+    if (plan === 'free') {
+      btnFamilyUpgradePlan.textContent = '⚡ Mejorar Plan';
+      btnFamilyUpgradePlan.style.display = 'inline-block';
+    } else if (plan === 'pro') {
+      btnFamilyUpgradePlan.textContent = '⭐ Mejorar a VIP';
+      btnFamilyUpgradePlan.style.display = 'inline-block';
+    } else {
+      btnFamilyUpgradePlan.style.display = 'none';
+    }
+  }
+
+  // Actualizar sección de Configuraciones -> Facturación
+  const billingPlanBadge = document.getElementById('billingPlanBadge');
+  if (billingPlanBadge) {
+    billingPlanBadge.textContent = displayName;
+  }
+
+  const billingDevicesQuotaText = document.getElementById('billingDevicesQuotaText');
+  if (billingDevicesQuotaText) {
+    billingDevicesQuotaText.textContent = `Hasta ${currentSubscription.maxDevices || 5} teléfonos o tablets`;
+  }
+
   // Highlight active plan in modal
   const allCards = [
     { card: document.getElementById('cardPlanFree'), btn: btnSelectPlanFree, planId: 'free' },
@@ -3732,6 +4428,160 @@ function updateSubscriptionUI() {
       item.btn.textContent = item.planId === 'free' ? 'Cambiar a Gratuito' : item.planId === 'pro' ? 'Elegir Familiar Pro' : 'Elegir Familia Total';
     }
   });
+
+  // Cargar detalles de facturación si existe la sección
+  loadBillingAndPaymentDetails();
+}
+
+// Cargar información de tarjeta bancaria, facturación y auto_renew
+async function loadBillingAndPaymentDetails() {
+  try {
+    const headers = {};
+    if (adminAuthToken) headers['Authorization'] = `Bearer ${adminAuthToken}`;
+    const res = await fetch('/api/subscription/billing', { headers });
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    if (data.paymentDetails) {
+      const { cardLast4, cardBrand, cardExp, cardHolder, autoRenew } = data.paymentDetails;
+      
+      const cardBrandBadge = document.getElementById('creditCardBrandBadge');
+      if (cardBrandBadge) cardBrandBadge.textContent = (cardBrand || 'Visa').toUpperCase();
+      
+      const cardNumberDisplay = document.getElementById('creditCardNumberDisplay');
+      if (cardNumberDisplay) cardNumberDisplay.textContent = `•••• •••• •••• ${cardLast4 || '4242'}`;
+      
+      const cardHolderDisplay = document.getElementById('creditCardHolderDisplay');
+      if (cardHolderDisplay) cardHolderDisplay.textContent = cardHolder || 'Sebastián Briones';
+      
+      const cardExpDisplay = document.getElementById('creditCardExpDisplay');
+      if (cardExpDisplay) cardExpDisplay.textContent = cardExp || '12/28';
+      
+      const paymentSummary = document.getElementById('billingPaymentSummaryText');
+      if (paymentSummary) paymentSummary.textContent = `${cardBrand || 'Visa'} terminada en •••• ${cardLast4 || '4242'}`;
+      
+      const autoRenewSwitch = document.getElementById('toggleAutoRenewSwitch');
+      if (autoRenewSwitch) autoRenewSwitch.checked = Boolean(autoRenew);
+      
+      const autoRenewDesc = document.getElementById('autoRenewStatusDesc');
+      if (autoRenewDesc) {
+        autoRenewDesc.textContent = autoRenew 
+          ? 'Activa (Próximo cobro automático el 11/10/2026)' 
+          : 'Pausada (Tu servicio se mantendrá activo hasta fin de ciclo sin cobros automáticos)';
+        autoRenewDesc.style.color = autoRenew ? '#34d399' : '#f87171';
+      }
+    }
+
+    if (data.invoices && Array.isArray(data.invoices)) {
+      renderBillingInvoices(data.invoices);
+    }
+  } catch (e) {
+    console.warn('Error cargando detalles de facturación:', e);
+  }
+}
+
+function renderBillingInvoices(invoices) {
+  const container = document.getElementById('billingInvoicesList');
+  if (!container) return;
+  
+  if (invoices.length === 0) {
+    container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; padding: 6px 0;">Sin pagos registrados aún.</div>';
+    return;
+  }
+
+  container.innerHTML = invoices.map(inv => `
+    <div class="invoice-item-row">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 1.1rem;">🧾</span>
+        <div>
+          <div style="font-weight: 600; color: #fff;">${inv.description}</div>
+          <div style="font-size: 0.75rem; color: #94a3b8;">${inv.date} • ${inv.id} • ${inv.paymentMethod}</div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-weight: 700; color: #38bdf8;">${inv.amount}</span>
+        <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.72rem;">✓ ${inv.status}</span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="showToast('Comprobante ${inv.id} descargado en PDF', 'info')" style="padding: 4px 8px; font-size: 0.72rem;">
+          📄 Recibo
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function handleToggleAutoRenew(e) {
+  const isChecked = e.target.checked;
+  const autoRenewDesc = document.getElementById('autoRenewStatusDesc');
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (adminAuthToken) headers['Authorization'] = `Bearer ${adminAuthToken}`;
+    const res = await fetch('/api/subscription/auto-renew', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ autoRenew: isChecked })
+    });
+    if (res.ok) {
+      if (autoRenewDesc) {
+        autoRenewDesc.textContent = isChecked 
+          ? 'Activa (Próximo cobro automático el 11/10/2026)' 
+          : 'Pausada (Tu servicio se mantendrá activo hasta fin de ciclo sin cobros automáticos)';
+        autoRenewDesc.style.color = isChecked ? '#34d399' : '#f87171';
+      }
+      showToast(isChecked ? 'Renovación automática activada' : 'Renovación automática pausada', isChecked ? 'success' : 'warning');
+    } else {
+      e.target.checked = !isChecked;
+      showToast('Error al actualizar estado de renovación', 'danger');
+    }
+  } catch (err) {
+    e.target.checked = !isChecked;
+    showToast('Error de conexión', 'danger');
+  }
+}
+
+async function handleSaveCardDetails() {
+  const holderInput = document.getElementById('inputCardHolder');
+  const numberInput = document.getElementById('inputCardNumber');
+  const expInput = document.getElementById('inputCardExp');
+  const cvcInput = document.getElementById('inputCardCvc');
+
+  const holder = holderInput ? holderInput.value.trim() : 'Sebastián Briones';
+  const number = numberInput ? numberInput.value.trim() : '';
+  const exp = expInput ? expInput.value.trim() : '';
+
+  if (!number || number.replace(/\s+/g, '').length < 13) {
+    alert('Por favor ingresa un número de tarjeta válido (mínimo 13 a 16 dígitos)');
+    return;
+  }
+  if (!exp || !exp.includes('/')) {
+    alert('Por favor ingresa una fecha de expiración válida con formato MM/AA (ej: 12/28)');
+    return;
+  }
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (adminAuthToken) headers['Authorization'] = `Bearer ${adminAuthToken}`;
+    const res = await fetch('/api/subscription/card', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        cardNumber: number,
+        cardExp: exp,
+        cardCvc: cvcInput ? cvcInput.value.trim() : '123',
+        cardHolder: holder
+      })
+    });
+    if (res.ok) {
+      const modal = document.getElementById('modalUpdateCard');
+      if (modal) modal.classList.remove('active');
+      showToast('Tarjeta bancaria actualizada con éxito', 'success');
+      await loadBillingAndPaymentDetails();
+    } else {
+      const err = await res.json();
+      alert(`Error al guardar tarjeta: ${err.error || 'Intente nuevamente'}`);
+    }
+  } catch (e) {
+    showToast('Error de conexión al actualizar tarjeta', 'danger');
+  }
 }
 
 // Change Subscription Plan (SaaS Monetization)
@@ -3831,9 +4681,9 @@ function setAdminLoggedInUI(user, sub) {
     }
   }
 
-  // Activar y mostrar el menú superior al iniciar sesión
+  // Mantener solo el menú lateral (Sidebar Opción 2), sin menú superior
   const desktopNav = document.querySelector('.desktop-nav-tabs');
-  if (desktopNav) desktopNav.style.display = 'flex';
+  if (desktopNav) desktopNav.style.display = 'none';
 
   const drawerBtnLogout = document.getElementById('drawerBtnLogout');
   if (drawerBtnLogout) drawerBtnLogout.style.display = 'block';

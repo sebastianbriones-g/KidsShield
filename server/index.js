@@ -665,6 +665,103 @@ app.post('/api/subscription/change-plan', async (req, res) => {
   res.json({ success: true, plan: updated.plan, maxDevices: updated.maxDevices });
 });
 
+// Get billing and payment details
+app.get('/api/subscription/billing', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  let familyId = 'FAM-DEFAULT-01';
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+      if (decoded.familyId) familyId = decoded.familyId;
+    } catch (e) {}
+  }
+
+  const sub = await db.getFamilySubscription(familyId);
+  const invoices = [
+    {
+      id: `INV-2026-${familyId.slice(-4)}-01`,
+      date: '11/09/2026',
+      description: `Suscripción ${sub.plan === 'family_total' ? 'Familia Total VIP 💎' : sub.plan === 'pro' ? 'Familiar Pro ⚡' : 'Plan Básico (Starter)'}`,
+      amount: sub.plan === 'family_total' ? '$8.990 CLP' : sub.plan === 'pro' ? '$4.990 CLP' : '$0 CLP',
+      status: 'Pagado',
+      paymentMethod: `${sub.cardBrand || 'Visa'} •••• ${sub.cardLast4 || '4242'}`
+    },
+    {
+      id: `INV-2026-${familyId.slice(-4)}-02`,
+      date: '11/08/2026',
+      description: 'Suscripción Familiar Pro ⚡ (Período anterior)',
+      amount: '$4.990 CLP',
+      status: 'Pagado',
+      paymentMethod: `${sub.cardBrand || 'Visa'} •••• ${sub.cardLast4 || '4242'}`
+    }
+  ];
+
+  res.json({
+    success: true,
+    subscription: sub,
+    paymentDetails: {
+      cardLast4: sub.cardLast4 || '4242',
+      cardBrand: sub.cardBrand || 'Visa',
+      cardExp: sub.cardExp || '12/28',
+      cardHolder: sub.cardHolder || 'Sebastián Briones',
+      autoRenew: sub.autoRenew !== false
+    },
+    invoices
+  });
+});
+
+// Update payment card details
+app.post('/api/subscription/card', async (req, res) => {
+  const { cardNumber, cardExp, cardCvc, cardHolder } = req.body;
+  if (!cardNumber || !cardExp) {
+    return res.status(400).json({ error: 'Número de tarjeta y fecha de expiración son requeridos' });
+  }
+
+  const cleanNum = String(cardNumber).replace(/\s+/g, '');
+  const last4 = cleanNum.slice(-4);
+  let brand = 'Visa';
+  if (cleanNum.startsWith('5') || cleanNum.startsWith('2')) brand = 'Mastercard';
+  else if (cleanNum.startsWith('3')) brand = 'Amex';
+
+  const authHeader = req.headers.authorization;
+  let familyId = 'FAM-DEFAULT-01';
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+      if (decoded.familyId) familyId = decoded.familyId;
+    } catch (e) {}
+  }
+
+  const updated = await db.updateSubscriptionCard(familyId, {
+    last4,
+    brand,
+    exp: cardExp,
+    holder: cardHolder || 'Sebastián Briones'
+  });
+
+  console.log(`[Subscription] 💳 Tarjeta bancaria actualizada (${brand} •••• ${last4}) para la familia ${familyId}`);
+  broadcast('PAYMENT_METHOD_UPDATED', { familyId, brand, last4, exp: cardExp });
+  res.json({ success: true, ...updated });
+});
+
+// Toggle auto-renew
+app.post('/api/subscription/auto-renew', async (req, res) => {
+  const { autoRenew } = req.body;
+  const authHeader = req.headers.authorization;
+  let familyId = 'FAM-DEFAULT-01';
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+      if (decoded.familyId) familyId = decoded.familyId;
+    } catch (e) {}
+  }
+
+  const result = await db.toggleAutoRenew(familyId, Boolean(autoRenew));
+  console.log(`[Subscription] 🔄 Renovación automática ${autoRenew ? 'ACTIVADA' : 'PAUSADA'} para la familia ${familyId}`);
+  broadcast('AUTO_RENEW_UPDATED', { familyId, autoRenew: Boolean(autoRenew) });
+  res.json({ success: true, autoRenew: result.autoRenew });
+});
+
 // ----------------------------------------------------------------
 // Multi-Device Management Routes
 // ----------------------------------------------------------------
