@@ -235,19 +235,29 @@ public class UsageMonitorService extends Service {
         boolean dailyLimitReached = (config.getDailyLimitMinutes() > 0 && totalScreenTimeMinutes >= config.getDailyLimitMinutes());
         boolean inBedtime = config.isCurrentTimeInBedtime();
 
-        if (dailyLimitReached) {
+        if (config.isDeviceLocked()) {
+            Intent lockIntent = new Intent(this, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
+            lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            String reason = config.getLockReason();
+            if (reason == null || reason.isEmpty()) reason = "Dispositivo bloqueado por control parental.";
+            lockIntent.putExtra("BLOCK_REASON", reason);
+            lockIntent.putExtra("IS_DEVICE_LOCKED", true);
+            startActivity(lockIntent);
+        } else if (dailyLimitReached) {
             config.setDeviceLocked(true);
             config.setLockReason("Límite diario de tiempo de pantalla alcanzado (" + config.getDailyLimitMinutes() + " min).");
             Intent lockIntent = new Intent(this, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
             lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            lockIntent.putExtra("reason", "Límite diario de tiempo de pantalla alcanzado (" + config.getDailyLimitMinutes() + " min).");
+            lockIntent.putExtra("BLOCK_REASON", "Límite diario de tiempo de pantalla alcanzado (" + config.getDailyLimitMinutes() + " min).");
+            lockIntent.putExtra("IS_DEVICE_LOCKED", true);
             startActivity(lockIntent);
         } else if (inBedtime) {
             config.setDeviceLocked(true);
             config.setLockReason("Modo descanso / Horario nocturno activo (" + config.getBedtimeStart() + " - " + config.getBedtimeEnd() + ").");
             Intent lockIntent = new Intent(this, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
             lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            lockIntent.putExtra("reason", "Horario nocturno activo (" + config.getBedtimeStart() + " - " + config.getBedtimeEnd() + ")");
+            lockIntent.putExtra("BLOCK_REASON", "Horario nocturno activo (" + config.getBedtimeStart() + " - " + config.getBedtimeEnd() + ")");
+            lockIntent.putExtra("IS_DEVICE_LOCKED", true);
             startActivity(lockIntent);
         }
 

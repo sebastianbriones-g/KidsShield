@@ -87,6 +87,13 @@ public class SyncClient {
                     body.put("battery", batteryLevel);
                     body.put("screenTimeTodayMinutes", screenTimeTodayMinutes);
                     body.put("currentActiveApp", activePackageName != null ? activePackageName : "");
+                    body.put("deviceName", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
+                    body.put("model", android.os.Build.MODEL);
+                    body.put("manufacturer", android.os.Build.MANUFACTURER);
+                    boolean isTablet = (context.getResources().getConfiguration().screenLayout 
+                            & android.content.res.Configuration.SCREENLAYOUT_SIZE_MASK) 
+                            >= android.content.res.Configuration.SCREENLAYOUT_SIZE_LARGE;
+                    body.put("deviceType", isTablet ? "tablet" : "celular");
                     if (appCatalogArray != null) {
                         body.put("appCatalog", appCatalogArray);
                     }
@@ -130,9 +137,12 @@ public class SyncClient {
                             } else {
                                 String reason = resJson.optString("lockReason", config.getLockReason());
                                 if (reason == null || reason.isEmpty()) reason = "Dispositivo bloqueado por control parental.";
+                                config.setLockReason(reason);
                                 Intent lockIntent = new Intent(context, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
                                 lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                                 lockIntent.putExtra("reason", reason);
+                                lockIntent.putExtra("BLOCK_REASON", reason);
+                                lockIntent.putExtra("IS_DEVICE_LOCKED", true);
                                 context.startActivity(lockIntent);
                             }
                         }
@@ -169,6 +179,16 @@ public class SyncClient {
                                 if ("UNLINK_DEVICE".equalsIgnoreCase(cmd) || "UNLOCK_DEVICE".equalsIgnoreCase(cmd)) {
                                     Log.i(TAG, "Comando recibido: " + cmd + " -> Liberando y desbloqueando teléfono");
                                     handleUnlinkAndRelease(context);
+                                } else if ("LOCK_DEVICE".equalsIgnoreCase(cmd)) {
+                                    Log.i(TAG, "Comando recibido: LOCK_DEVICE -> Bloqueando teléfono");
+                                    config.setDeviceLocked(true);
+                                    String reason = config.getLockReason();
+                                    if (reason == null || reason.isEmpty()) reason = "Dispositivo bloqueado por control parental.";
+                                    Intent lockIntent = new Intent(context, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
+                                    lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                                    lockIntent.putExtra("BLOCK_REASON", reason);
+                                    lockIntent.putExtra("IS_DEVICE_LOCKED", true);
+                                    context.startActivity(lockIntent);
                                 } else if ("TAKE_SCREENSHOT".equalsIgnoreCase(cmd)) {
                                     Log.i(TAG, "Comando recibido: TAKE_SCREENSHOT");
                                     AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();

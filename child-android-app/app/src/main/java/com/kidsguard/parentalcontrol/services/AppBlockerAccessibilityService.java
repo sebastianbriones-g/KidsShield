@@ -143,8 +143,26 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
                 return;
             }
 
-            if (SYSTEM_WHITELIST.contains(packageName)) {
-                return;
+            // Si el dispositivo está bloqueado por el padre, NO permitir launchers ni otras apps (solo teléfono de emergencia o nuestra propia app)
+            boolean isEmergencyDialer = packageName.contains("dialer") || packageName.contains("telecom") || "com.android.phone".equals(packageName);
+            boolean isOurApp = "com.kidsguard.parentalcontrol".equals(packageName);
+            boolean isSystemUi = "com.android.systemui".equals(packageName);
+
+            if (config.isDeviceLocked()) {
+                if (!isEmergencyDialer && !isOurApp && !isSystemUi) {
+                    Log.w(TAG, "Dispositivo bloqueado: Interceptando intento de abrir o usar " + packageName);
+                    Intent lockIntent = new Intent(this, LockOverlayActivity.class);
+                    lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    lockIntent.putExtra("BLOCK_REASON", config.getLockReason());
+                    lockIntent.putExtra("IS_DEVICE_LOCKED", true);
+                    lockIntent.putExtra("BLOCKED_PACKAGE", packageName);
+                    startActivity(lockIntent);
+                    return;
+                }
+            } else {
+                if (SYSTEM_WHITELIST.contains(packageName)) {
+                    return;
+                }
             }
 
             PackageManager pm = getPackageManager();
@@ -212,14 +230,17 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
                     SyncClient.sendEvent(this, eventTypeToReport, packageName, appName, blockReason);
                 }
 
-                // Send user to home screen immediately
-                performGlobalAction(GLOBAL_ACTION_HOME);
+                // Si es bloqueo de una app específica, enviar a home antes del overlay; si es bloqueo total de dispositivo, no ir a home
+                if (!config.isDeviceLocked()) {
+                    performGlobalAction(GLOBAL_ACTION_HOME);
+                }
 
                 // Launch Fullscreen Lock Activity
                 Intent lockIntent = new Intent(this, LockOverlayActivity.class);
                 lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 lockIntent.putExtra("BLOCK_REASON", blockReason);
                 lockIntent.putExtra("BLOCKED_PACKAGE", packageName);
+                lockIntent.putExtra("IS_DEVICE_LOCKED", config.isDeviceLocked());
                 startActivity(lockIntent);
             }
         }

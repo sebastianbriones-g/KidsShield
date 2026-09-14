@@ -28,6 +28,14 @@ let leafletRouteMarkers = [];
 let isRouteHistoryVisible = false;
 let leafletGeofencesLayers = [];
 let areGeofencesVisible = true;
+
+// Dedicated Map State (Tab: Mapas & Geocercas)
+let dedicatedLeafletMap = null;
+let dedicatedMarker = null;
+let dedicatedCircle = null;
+let dedicatedGeofencesLayers = [];
+let dedicatedRoutePolyline = null;
+let dedicatedRouteMarkers = [];
 let isAudioRecordingRequested = false;
 let autoScreenshotTimer = null;
 let isLivePaused = false;
@@ -255,6 +263,9 @@ function renderAll() {
   renderScheduleControls();
   renderSimulator();
   renderMap();
+  if (typeof currentDashboardView !== 'undefined' && currentDashboardView === 'map') {
+    initDedicatedMap();
+  }
   renderActivityFeed();
 }
 
@@ -637,6 +648,9 @@ function renderSimulator() {
   // Real Screenshot Projection
   const simLiveScreenImg = document.getElementById('simLiveScreenImg');
   const simScreenshotStatusText = document.getElementById('simScreenshotStatusText');
+  if (!currentVideoClip.isPlaying && simVideoClipOverlay) {
+    simVideoClipOverlay.style.display = 'none';
+  }
   if (simLiveScreenImg) {
     if (currentDevice.lastScreenshot) {
       simLiveScreenImg.src = currentDevice.lastScreenshot.startsWith('data:') 
@@ -664,14 +678,10 @@ function renderSimulator() {
   const isAppLimitExceeded = appLimit > 0 && activeApp && (activeApp.timeTodayMinutes || 0) >= appLimit;
   const isBlockedApp = activeApp && (activeApp.isBlocked || isAppLimitExceeded);
   const isOverLimit = (currentDevice.screenTimeTodayMinutes || 0) >= (currentDevice.dailyLimitMinutes || 120);
-  const isLockedMaster = currentDevice.isLocked;
 
-  if (isLockedMaster || isBlockedApp || isOverLimit) {
+  if (isBlockedApp || isOverLimit) {
     simLockOverlay.classList.add('active');
-    if (isLockedMaster) {
-      simLockTitle.textContent = '🔒 Teléfono Pausado';
-      simLockReason.textContent = currentDevice.lockReason || 'Bloqueado remotamente por tus padres.';
-    } else if (isAppLimitExceeded) {
+    if (isAppLimitExceeded) {
       simLockTitle.textContent = '⌛ Límite de App Agotado';
       simLockReason.textContent = `Has alcanzado el límite diario de ${appLimit} min en ${activeApp.name}.`;
     } else if (isBlockedApp) {
@@ -771,6 +781,9 @@ function renderMap() {
 
     if (areGeofencesVisible) {
       fetchAndRenderGeofences();
+    }
+    if (typeof setupMapClickListener === 'function') {
+      setupMapClickListener(leafletMap);
     }
     setTimeout(() => { if (leafletMap) leafletMap.invalidateSize(); }, 150);
   } catch (err) {
@@ -1136,15 +1149,18 @@ function closeMobileDrawer() {
 }
 
 // Unlink Device Modal & API
-function openUnlinkDeviceModal() {
+function openUnlinkDeviceModal(targetDevId = null) {
+  if (targetDevId) {
+    onDeviceSelected(targetDevId);
+  }
   if (!currentDevice) {
-    showToast('No hay dispositivo activo para desvincular.', 'warning');
+    showToast('No hay dispositivo seleccionado para desvincular.', 'warning');
     return;
   }
   const modal = document.getElementById('modalUnlinkDevice');
   const nameDisplay = document.getElementById('modalUnlinkDeviceName');
   if (nameDisplay) {
-    nameDisplay.textContent = `${currentDevice.name} (${currentDevice.id})`;
+    nameDisplay.textContent = `${currentDevice.childName || currentDevice.name || 'Dispositivo'} • ${currentDevice.name || ''} (${currentDevice.id})`;
   }
   if (modal) modal.classList.add('open');
 }
@@ -1169,9 +1185,16 @@ async function confirmUnlinkDevice() {
         currentDevice = null;
         localStorage.removeItem('kidsshield_active_device_id');
         renderNoDeviceState();
-        switchView('portal');
       }
       renderDeviceSelector();
+      renderFamilyOverviewCards();
+      renderFamilyChildrenCards();
+      syncChildContextSelectors();
+      const familyDevicesUsageText = document.getElementById('familyDevicesUsageText');
+      if (familyDevicesUsageText) {
+        const sub = (typeof currentSubscription !== 'undefined' && currentSubscription) ? currentSubscription : { maxDevices: 5 };
+        familyDevicesUsageText.textContent = `${devicesList.length} / ${sub.maxDevices || 5} permitidos`;
+      }
     } else {
       showToast('Error al desvincular el dispositivo', 'danger');
     }
@@ -1221,14 +1244,29 @@ function renderFamilyOverviewCards() {
     const activeAppIcon = dev.activeApp ? (dev.activeApp.icon || '📱') : '📱';
     const isLocked = Boolean(dev.isLocked);
 
+    const isTablet = dev.deviceType === 'tablet';
+    const typeBadge = isTablet ? '📟 Tablet' : '📱 Celular';
+    const isConnected = Boolean(isOnline || dev.hasConnected);
+    const isPending = !isConnected && (typeof dev.name === 'string' && dev.name.startsWith('Esperando conexión'));
+    let cleanDevName = dev.name;
+    if (isPending) {
+      cleanDevName = `⏳ Esperando conexión (${typeBadge})`;
+    } else {
+      if (!cleanDevName || cleanDevName.startsWith('Esperando conexión')) {
+        cleanDevName = dev.model || 'Dispositivo Conectado';
+      }
+      cleanDevName = `${typeBadge} • ${cleanDevName}`;
+    }
+    const childDisplayName = dev.childName || (dev.id === 'KID-PHONE-01' ? 'Seba' : (dev.name || 'Hijo'));
+
     return `
       <div class="child-overview-card ${isSelected ? 'is-active-device' : ''}" id="overviewCard-${dev.id}">
         <div class="card-child-header">
           <div class="child-info-group">
-            <div class="child-avatar-badge">${dev.avatar || '👦'}</div>
+            <div class="child-avatar-badge">${dev.avatar || (isTablet ? '📟' : '👦')}</div>
             <div>
-              <h4 class="child-name-text">${dev.childName || dev.name || 'Hijo'}</h4>
-              <p class="child-device-model">${dev.name || 'Teléfono'} • <span style="font-family: monospace;">${dev.id}</span></p>
+              <h4 class="child-name-text">${childDisplayName}</h4>
+              <p class="child-device-model">${cleanDevName} • <span style="font-family: monospace;">${dev.id}</span></p>
             </div>
           </div>
           <span class="status-indicator ${isOnline ? 'online' : 'offline'}">
@@ -1264,6 +1302,15 @@ function renderFamilyOverviewCards() {
             ${isLocked ? '🔓 Desbloquear' : '🔒 Bloquear'}
           </button>
         </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 0.78rem;">
+          <button class="btn btn-outline btn-sm" onclick="selectAndGoSettings('${dev.id}')" style="font-size: 0.74rem; padding: 4px 8px;" title="Ajustes y límites de este dispositivo">
+            ⚙️ Configurar
+          </button>
+          <button class="btn btn-danger-outline btn-sm" onclick="openUnlinkForDevice('${dev.id}')" style="font-size: 0.74rem; padding: 4px 8px;" title="Desvincular y liberar teléfono">
+            🗑️ Desvincular
+          </button>
+        </div>
       </div>
     `;
   }).join('');
@@ -1278,29 +1325,72 @@ function selectAndFocusScreen(devId) {
   }
 }
 
+function updateLockUI(isLocked) {
+  if (btnMasterLock && masterLockIcon && masterLockText) {
+    if (isLocked) {
+      btnMasterLock.classList.add('is-locked');
+      masterLockIcon.textContent = '🔓';
+      masterLockText.textContent = 'Desbloquear Teléfono';
+    } else {
+      btnMasterLock.classList.remove('is-locked');
+      masterLockIcon.textContent = '🔒';
+      masterLockText.textContent = 'Bloquear Teléfono Ahora';
+    }
+  }
+  if (currentDevice) {
+    currentDevice.isLocked = isLocked;
+  }
+  renderSimulator();
+}
+
 async function toggleDeviceLockById(devId) {
   try {
     const dev = devicesList.find(d => d.id === devId);
     const newLock = dev ? !dev.isLocked : true;
+
+    // Actualización optimista inmediata
+    if (dev) dev.isLocked = newLock;
+    if (currentDevice && currentDevice.id === devId) {
+      currentDevice.isLocked = newLock;
+      updateLockUI(newLock);
+    }
+    renderFamilyOverviewCards();
+    if (document.getElementById('tabViewFamily') && !document.getElementById('tabViewFamily').classList.contains('hidden')) {
+      renderFamilyChildrenCards();
+    }
+
     const res = await apiFetch(`/api/devices/${devId}/toggle-lock`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isLocked: newLock })
     });
+
     if (res.ok) {
-      if (dev) dev.isLocked = newLock;
+      const data = await res.json();
+      const actualLock = (data && typeof data.isLocked === 'boolean') ? data.isLocked : newLock;
+      if (dev) dev.isLocked = actualLock;
       if (currentDevice && currentDevice.id === devId) {
-        currentDevice.isLocked = newLock;
-        updateLockUI(newLock);
+        currentDevice.isLocked = actualLock;
+        updateLockUI(actualLock);
       }
       renderFamilyOverviewCards();
       if (document.getElementById('tabViewFamily') && !document.getElementById('tabViewFamily').classList.contains('hidden')) {
         renderFamilyChildrenCards();
       }
-      showToast(`Dispositivo ${newLock ? 'bloqueado' : 'desbloqueado'} con éxito`, 'info');
+      showToast(`🔒 ${dev ? (dev.childName || dev.name) : 'Dispositivo'} ${actualLock ? 'bloqueado' : 'desbloqueado'} con éxito`, actualLock ? 'warning' : 'success');
+    } else {
+      // Revertir en caso de falla
+      if (dev) dev.isLocked = !newLock;
+      if (currentDevice && currentDevice.id === devId) {
+        currentDevice.isLocked = !newLock;
+        updateLockUI(!newLock);
+      }
+      renderFamilyOverviewCards();
+      showToast('Error al cambiar estado de bloqueo del dispositivo', 'danger');
     }
   } catch (err) {
     console.error('Error cambiando bloqueo:', err);
+    showToast('Error de comunicación al bloquear', 'danger');
   }
 }
 
@@ -1319,11 +1409,16 @@ function renderFamilyTab() {
   if (familyOwnerName) familyOwnerName.textContent = (adminUser && adminUser.name) || 'Administrador Familiar';
   if (familyOwnerEmail) familyOwnerEmail.textContent = (adminUser && adminUser.email) || 'contacto@familia.local';
 
-  const maxDevs = (familySubscription && familySubscription.maxDevices) || 5;
-  const count = devicesList.length;
+  const sub = (typeof currentSubscription !== 'undefined' && currentSubscription) ? currentSubscription : { plan: 'family_total', maxDevices: 10 };
+  const maxDevs = sub.maxDevices || 10;
+  const count = (devicesList && Array.isArray(devicesList)) ? devicesList.length : 0;
   if (familyDevicesUsageText) familyDevicesUsageText.textContent = `${count} / ${maxDevs} permitidos`;
 
-  const planName = (familySubscription && familySubscription.plan) ? (familySubscription.plan === 'free' ? 'Plan Gratuito' : familySubscription.plan === 'family_total' ? 'Familia Total VIP 👑' : 'Familiar Pro ⚡') : 'Familiar Pro ⚡';
+  const planName = (sub.plan === 'free') 
+    ? 'Plan Gratuito' 
+    : (sub.plan === 'family_total') 
+      ? 'Familia Total VIP 💎' 
+      : 'Familiar Pro ⚡';
   if (familyPlanBadge) familyPlanBadge.textContent = planName;
 
   // Actualizar sidebar info
@@ -1364,14 +1459,34 @@ function renderFamilyChildrenCards() {
     const batt = typeof dev.battery === 'number' ? `${dev.battery}%` : '--%';
     const lastSeen = dev.lastSeen ? new Date(dev.lastSeen).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'Sin reporte';
 
+    const isTablet = dev.deviceType === 'tablet';
+    const typeBadge = isTablet ? '📟 Tablet' : '📱 Celular';
+    const isConnected = Boolean(isOnline || dev.hasConnected);
+    const isPending = !isConnected && (typeof dev.name === 'string' && dev.name.startsWith('Esperando conexión'));
+    let cleanDevName = dev.name;
+    if (isPending) {
+      cleanDevName = `⏳ Esperando conexión (${typeBadge})`;
+    } else {
+      if (!cleanDevName || cleanDevName.startsWith('Esperando conexión')) {
+        cleanDevName = dev.model || 'Dispositivo Conectado';
+      }
+      cleanDevName = `${typeBadge} • ${cleanDevName}`;
+    }
+    const childDisplayName = dev.childName || (dev.id === 'KID-PHONE-01' ? 'Seba' : (dev.name || 'Hijo'));
+
     return `
       <div class="child-family-card ${isSelected ? 'is-active-device' : ''}" id="familyChildCard-${dev.id}">
         <div class="family-card-top">
           <div class="family-card-profile">
-            <div class="family-card-avatar">${dev.avatar || '👦'}</div>
+            <div class="family-card-avatar">${dev.avatar || (isTablet ? '📟' : '👦')}</div>
             <div>
-              <h4 class="family-card-name">${dev.childName || dev.name || 'Hijo'}</h4>
-              <p class="family-card-devname">${dev.name || 'Teléfono'} • <span style="font-family: monospace;">${dev.id}</span></p>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <h4 class="family-card-name">${childDisplayName}</h4>
+                <button type="button" class="btn-icon-edit" onclick="openEditChildModal('${dev.id}')" title="Modificar nombre o dispositivo" style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 6px; padding: 2px 6px; font-size: 0.72rem; color: #a5b4fc; cursor: pointer;">
+                  ✏️ Editar
+                </button>
+              </div>
+              <p class="family-card-devname">${cleanDevName} • <span style="font-family: monospace;">${dev.id}</span></p>
             </div>
           </div>
           <span class="status-indicator ${isOnline ? 'online' : 'offline'}">
@@ -1402,8 +1517,11 @@ function renderFamilyChildrenCards() {
           </button>
         </div>
 
-        <!-- Acciones Secundarias (QR y Desvincular) -->
+        <!-- Acciones Secundarias (Editar, QR y Desvincular) -->
         <div class="family-card-aux-row">
+          <button class="btn btn-outline btn-sm" onclick="openEditChildModal('${dev.id}')" style="font-size: 0.78rem;">
+            ✏️ Modificar Perfil
+          </button>
           <button class="btn btn-secondary btn-sm" onclick="openPairingQrForDevice('${dev.id}')" style="font-size: 0.78rem;">
             🔗 Código QR
           </button>
@@ -1440,8 +1558,311 @@ function openPairingQrForDevice(devId) {
 }
 
 function openUnlinkForDevice(devId) {
-  onDeviceSelected(devId);
-  openUnlinkDeviceModal();
+  openUnlinkDeviceModal(devId);
+}
+
+// ----------------------------------------------------------------
+// Edición de Perfil de Hijo y Dispositivo (Mi Familia)
+// ----------------------------------------------------------------
+let selectedEditAvatar = '👦';
+
+function openEditChildModal(devId) {
+  const dev = devicesList.find(d => d.id === devId) || currentDevice;
+  if (!dev) return;
+
+  const modal = document.getElementById('modalEditChildProfile');
+  if (!modal) return;
+
+  const hiddenId = document.getElementById('editChildDeviceId');
+  const inputName = document.getElementById('inputEditChildName');
+  const inputDevice = document.getElementById('inputEditDeviceName');
+  const radioCelular = document.getElementById('editTypeCelular');
+  const radioTablet = document.getElementById('editTypeTablet');
+
+  if (hiddenId) hiddenId.value = dev.id;
+
+  const defaultChildName = dev.childName || (dev.id === 'KID-PHONE-01' ? 'Seba' : (dev.name || 'Hijo'));
+  if (inputName) inputName.value = defaultChildName;
+  if (inputDevice) {
+    let devClean = dev.name || '';
+    if (devClean.startsWith('Esperando conexión')) devClean = dev.model || '';
+    inputDevice.value = devClean;
+  }
+
+  if (dev.deviceType === 'tablet') {
+    if (radioTablet) radioTablet.checked = true;
+  } else {
+    if (radioCelular) radioCelular.checked = true;
+  }
+
+  selectedEditAvatar = dev.avatar || (dev.deviceType === 'tablet' ? '📟' : '👦');
+  const avatarBtns = document.querySelectorAll('#editChildAvatarPicker .avatar-option-btn');
+  avatarBtns.forEach(btn => {
+    if (btn.getAttribute('data-avatar') === selectedEditAvatar) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
+  modal.classList.add('active');
+}
+
+function closeEditChildModal() {
+  const modal = document.getElementById('modalEditChildProfile');
+  if (modal) modal.classList.remove('active');
+}
+
+async function saveChildProfile() {
+  const devId = document.getElementById('editChildDeviceId')?.value;
+  if (!devId) return;
+
+  const childName = document.getElementById('inputEditChildName')?.value.trim();
+  const deviceName = document.getElementById('inputEditDeviceName')?.value.trim();
+  const isTablet = document.getElementById('editTypeTablet')?.checked;
+  const deviceType = isTablet ? 'tablet' : 'celular';
+  const avatar = selectedEditAvatar || '👦';
+
+  if (!childName) {
+    showToast('Ingresa el nombre del hijo/a', 'warning');
+    return;
+  }
+
+  try {
+    const res = await apiFetch(`/api/devices/${devId}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        childName,
+        name: deviceName || undefined,
+        deviceType,
+        avatar
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const updated = data.device;
+      const idx = devicesList.findIndex(d => d.id === devId);
+      if (idx !== -1) {
+        devicesList[idx] = { ...devicesList[idx], ...updated };
+      }
+      if (currentDevice && currentDevice.id === devId) {
+        currentDevice = { ...currentDevice, ...updated };
+      }
+
+      closeEditChildModal();
+      renderFamilyChildrenCards();
+      renderFamilyOverviewCards();
+      renderHeader();
+      renderChildContextSelects();
+      showToast(`✅ Perfil de "${childName}" actualizado con éxito`, 'success');
+    } else {
+      showToast('Error al guardar cambios de perfil', 'danger');
+    }
+  } catch (err) {
+    console.error('Error guardando perfil de hijo:', err);
+    showToast('Error de conexión al guardar cambios', 'danger');
+  }
+}
+
+// ----------------------------------------------------------------
+// Selección de Punto en el Mapa para Lugares y Geocercas
+// ----------------------------------------------------------------
+let tempGeofenceMarker = null;
+
+function setupMapClickListener(mapInstance) {
+  if (!mapInstance || mapInstance._hasClickGeofenceListener) return;
+  mapInstance._hasClickGeofenceListener = true;
+
+  mapInstance.on('click', function(e) {
+    if (!e || !e.latlng) return;
+    const lat = Number(e.latlng.lat.toFixed(6));
+    const lng = Number(e.latlng.lng.toFixed(6));
+
+    if (tempGeofenceMarker) {
+      try {
+        if (dedicatedLeafletMap) dedicatedLeafletMap.removeLayer(tempGeofenceMarker);
+        if (leafletMap) leafletMap.removeLayer(tempGeofenceMarker);
+      } catch (err) {}
+      tempGeofenceMarker = null;
+    }
+
+    const popupHtml = `
+      <div style="font-family: inherit; min-width: 190px; text-align: center; padding: 6px 4px;">
+        <div style="font-weight: 700; color: #0f172a; font-size: 0.92rem; margin-bottom: 4px;">📍 Punto Seleccionado</div>
+        <div style="font-size: 0.76rem; color: #475569; margin-bottom: 8px; line-height: 1.3;">
+          Lat: <strong>${lat}</strong><br>Lng: <strong>${lng}</strong>
+        </div>
+        <button id="btnCreateGeoAtClick" class="btn btn-primary btn-sm" style="font-size: 0.78rem; width: 100%; padding: 5px 8px; cursor: pointer; border-radius: 6px;">
+          ➕ Establecer Geocerca Aquí
+        </button>
+      </div>
+    `;
+
+    tempGeofenceMarker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: 'custom-pin-point',
+        html: '<div style="background: #4f46e5; color: white; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; border: 2.5px solid white; box-shadow: 0 4px 14px rgba(0,0,0,0.4); cursor: pointer;">📍</div>',
+        iconSize: [34, 34],
+        iconAnchor: [17, 34]
+      })
+    }).addTo(mapInstance).bindPopup(popupHtml).openPopup();
+
+    setTimeout(() => {
+      const btn = document.getElementById('btnCreateGeoAtClick');
+      if (btn) {
+        btn.onclick = () => {
+          openGeofenceManagerWithCoords(lat, lng);
+        };
+      }
+    }, 120);
+  });
+}
+
+function openGeofenceManagerWithCoords(lat, lng) {
+  const modal = document.getElementById('modalGeofenceManager');
+  if (!modal) return;
+  const latInput = document.getElementById('inputGeofenceLat');
+  const lngInput = document.getElementById('inputGeofenceLng');
+  const nameInput = document.getElementById('inputGeofenceName');
+  if (latInput) latInput.value = lat;
+  if (lngInput) lngInput.value = lng;
+  if (nameInput) {
+    nameInput.value = 'Lugar Seguro 📍';
+  }
+  modal.classList.add('active');
+  showToast(`Punto seleccionado: Lat ${lat}, Lng ${lng}. Asigna un nombre a la geocerca.`, 'info');
+}
+
+// ----------------------------------------------------------------
+// Captura Automática Periódica (Multimedia: Foto, Video 5s, Audio)
+// ----------------------------------------------------------------
+let autoCaptureTimer = null;
+let autoCaptureCountdownTimer = null;
+let autoCaptureSecondsLeft = 0;
+let sequenceStateToggle = false;
+
+function toggleAutoCapture() {
+  if (autoCaptureTimer) {
+    stopAutoCapture();
+  } else {
+    startAutoCapture();
+  }
+}
+
+function startAutoCapture() {
+  if (!currentDevice) {
+    showToast('Selecciona un dispositivo primero', 'warning');
+    return;
+  }
+  const typeSelect = document.getElementById('autoCaptureTypeSelect');
+  const intervalSelect = document.getElementById('autoCaptureIntervalSelect');
+  const type = typeSelect ? typeSelect.value : 'photo';
+  const intervalSeconds = intervalSelect ? parseInt(intervalSelect.value, 10) : 60;
+
+  const btnText = document.getElementById('btnAutoCaptureText');
+  const btnIcon = document.getElementById('btnAutoCaptureIcon');
+  const liveBadge = document.getElementById('autoCaptureLiveBadge');
+  const statusMsg = document.getElementById('autoCaptureStatusMsg');
+  const toggleBtn = document.getElementById('btnToggleAutoCapture');
+
+  if (toggleBtn) {
+    toggleBtn.classList.remove('btn-primary');
+    toggleBtn.classList.add('btn-danger');
+    toggleBtn.style.background = '#ef4444';
+  }
+  if (btnText) btnText.textContent = 'Detener Auto';
+  if (btnIcon) btnIcon.textContent = '⏹';
+  if (liveBadge) {
+    liveBadge.textContent = 'ACTIVA';
+    liveBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+    liveBadge.style.color = '#f87171';
+  }
+
+  // Disparar la primera captura de inmediato
+  executeAutoCaptureStep(type);
+
+  autoCaptureSecondsLeft = intervalSeconds;
+  updateCountdownStatus(statusMsg, type, autoCaptureSecondsLeft);
+
+  if (autoCaptureCountdownTimer) clearInterval(autoCaptureCountdownTimer);
+  autoCaptureCountdownTimer = setInterval(() => {
+    autoCaptureSecondsLeft--;
+    if (autoCaptureSecondsLeft <= 0) {
+      autoCaptureSecondsLeft = intervalSeconds;
+      executeAutoCaptureStep(type);
+    }
+    updateCountdownStatus(statusMsg, type, autoCaptureSecondsLeft);
+  }, 1000);
+
+  autoCaptureTimer = true;
+  showToast(`🔄 Captura automática iniciada cada ${intervalSeconds}s (${type})`, 'success');
+}
+
+function updateCountdownStatus(statusEl, type, seconds) {
+  if (!statusEl) return;
+  const typeNames = {
+    photo: '📸 Fotos',
+    video: '🎥 Videos de 5s',
+    audio: '🎙️ Audios de 5s',
+    sequence: '🔄 Secuencia (Foto + Audio)'
+  };
+  statusEl.innerHTML = `<span style="color: #34d399; font-weight: 600;">● Ejecutando (${typeNames[type] || type}):</span> próxima captura en <strong>${seconds}s</strong>`;
+}
+
+function stopAutoCapture() {
+  if (autoCaptureCountdownTimer) {
+    clearInterval(autoCaptureCountdownTimer);
+    autoCaptureCountdownTimer = null;
+  }
+  autoCaptureTimer = null;
+
+  const btnText = document.getElementById('btnAutoCaptureText');
+  const btnIcon = document.getElementById('btnAutoCaptureIcon');
+  const liveBadge = document.getElementById('autoCaptureLiveBadge');
+  const statusMsg = document.getElementById('autoCaptureStatusMsg');
+  const toggleBtn = document.getElementById('btnToggleAutoCapture');
+
+  if (toggleBtn) {
+    toggleBtn.classList.remove('btn-danger');
+    toggleBtn.classList.add('btn-primary');
+    toggleBtn.style.background = '';
+  }
+  if (btnText) btnText.textContent = 'Iniciar Auto';
+  if (btnIcon) btnIcon.textContent = '▶';
+  if (liveBadge) {
+    liveBadge.textContent = 'Inactiva';
+    liveBadge.style.background = 'rgba(148, 163, 184, 0.2)';
+    liveBadge.style.color = 'var(--text-muted)';
+  }
+  if (statusMsg) {
+    statusMsg.textContent = 'Programa capturas automáticas constantes sin intervención manual';
+  }
+  showToast('Captura automática periódica detenida', 'info');
+}
+
+function executeAutoCaptureStep(type) {
+  if (!currentDevice) return;
+  if (type === 'photo') {
+    requestScreenshotNow();
+  } else if (type === 'video') {
+    requestVideo5s();
+  } else if (type === 'audio') {
+    requestAudio5s();
+  } else if (type === 'sequence') {
+    if (!sequenceStateToggle) {
+      requestScreenshotNow();
+    } else {
+      requestAudio5s();
+    }
+    sequenceStateToggle = !sequenceStateToggle;
+  }
+  setTimeout(() => {
+    if (typeof fetchAndRenderMultimediaGallery === 'function') {
+      fetchAndRenderMultimediaGallery(activeMultimediaFilter || 'all');
+    }
+  }, 2500);
 }
 
 // ----------------------------------------------------------------
@@ -1467,6 +1888,14 @@ function initDedicatedMap() {
   const addressEl = document.getElementById('mapDedicatedAddressText');
   const lastUpdateEl = document.getElementById('mapDedicatedLastUpdate');
 
+  if (!mapContainer || typeof L === 'undefined') return;
+
+  // Si el contenedor fue reinicializado en el DOM, limpiar _leaflet_id para evitar error Leaflet
+  if (mapContainer._leaflet_id && !dedicatedLeafletMap) {
+    mapContainer._leaflet_id = null;
+    mapContainer.innerHTML = '';
+  }
+
   if (currentDevice) {
     if (toggleGps) {
       toggleGps.checked = currentDevice.gpsTrackingEnabled !== false;
@@ -1480,47 +1909,86 @@ function initDedicatedMap() {
     }
 
     const loc = currentDevice.location;
-    if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
+    const hasValidCoords = loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number';
+    const lat = hasValidCoords ? loc.latitude : -33.4489;
+    const lng = hasValidCoords ? loc.longitude : -70.6693;
+    const accuracy = (loc && loc.accuracy) || 15;
+
+    if (hasValidCoords) {
       if (addressEl) addressEl.textContent = `📍 ${loc.address || 'Ubicación satelital en vivo'}`;
       if (lastUpdateEl && loc.lastUpdated) {
         const d = new Date(loc.lastUpdated);
         lastUpdateEl.textContent = `Último reporte: ${d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
       }
-
-      if (mapContainer && typeof L !== 'undefined') {
-        try {
-          if (!dedicatedLeafletMap) {
-            dedicatedLeafletMap = L.map('mapLeafletDedicated', { zoomControl: true }).setView([loc.latitude, loc.longitude], 15);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-              maxZoom: 19,
-              attribution: '&copy; OpenStreetMap'
-            }).addTo(dedicatedLeafletMap);
-
-            dedicatedMarker = L.marker([loc.latitude, loc.longitude]).addTo(dedicatedLeafletMap)
-              .bindPopup(`<b>${currentDevice.name}</b><br>Ubicación GPS en vivo`)
-              .openPopup();
-          } else {
-            dedicatedLeafletMap.setView([loc.latitude, loc.longitude], 15);
-            if (dedicatedMarker) {
-              dedicatedMarker.setLatLng([loc.latitude, loc.longitude]);
-            }
-          }
-          setTimeout(() => { if (dedicatedLeafletMap) dedicatedLeafletMap.invalidateSize(); }, 200);
-        } catch (e) {
-          console.error('[Map] Error inicializando mapa dedicado:', e);
-        }
-      }
     } else {
       if (addressEl) addressEl.textContent = '📍 Esperando primera coordenada satelital GPS...';
-      if (mapContainer && typeof L !== 'undefined') {
-        try {
-          if (!dedicatedLeafletMap) {
-            dedicatedLeafletMap = L.map('mapLeafletDedicated', { zoomControl: true }).setView([-33.4489, -70.6693], 12);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(dedicatedLeafletMap);
+      if (lastUpdateEl) lastUpdateEl.textContent = 'Sin señal satelital aún';
+    }
+
+    try {
+      if (!dedicatedLeafletMap) {
+        dedicatedLeafletMap = L.map('mapLeafletDedicated', { zoomControl: true }).setView([lat, lng], hasValidCoords ? 15 : 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; OpenStreetMap'
+        }).addTo(dedicatedLeafletMap);
+
+        if (hasValidCoords) {
+          dedicatedMarker = L.marker([lat, lng]).addTo(dedicatedLeafletMap)
+            .bindPopup(`<b>${currentDevice.childName || currentDevice.name}</b><br>Ubicación GPS en vivo`)
+            .openPopup();
+
+          dedicatedCircle = L.circle([lat, lng], {
+            radius: accuracy,
+            color: '#10b981',
+            fillColor: '#10b981',
+            fillOpacity: 0.15
+          }).addTo(dedicatedLeafletMap);
+        }
+      } else {
+        dedicatedLeafletMap.setView([lat, lng], hasValidCoords ? 15 : 12);
+        if (hasValidCoords) {
+          if (!dedicatedMarker) {
+            dedicatedMarker = L.marker([lat, lng]).addTo(dedicatedLeafletMap);
+          } else {
+            dedicatedMarker.setLatLng([lat, lng]);
           }
-          setTimeout(() => { if (dedicatedLeafletMap) dedicatedLeafletMap.invalidateSize(); }, 200);
-        } catch (e) {}
+          dedicatedMarker.setPopupContent(`<b>${currentDevice.childName || currentDevice.name}</b><br>Ubicación GPS en vivo`);
+
+          if (!dedicatedCircle) {
+            dedicatedCircle = L.circle([lat, lng], {
+              radius: accuracy,
+              color: '#10b981',
+              fillColor: '#10b981',
+              fillOpacity: 0.15
+            }).addTo(dedicatedLeafletMap);
+          } else {
+            dedicatedCircle.setLatLng([lat, lng]);
+            dedicatedCircle.setRadius(accuracy);
+          }
+        }
       }
+
+      // Reajustar dimensiones ante transiciones de pestaña
+      [50, 150, 300, 600].forEach(ms => {
+        setTimeout(() => {
+          if (dedicatedLeafletMap) dedicatedLeafletMap.invalidateSize();
+        }, ms);
+      });
+
+      // Dibujar geocercas en el mapa dedicado
+      if (areGeofencesVisible && typeof fetchAndRenderGeofences === 'function') {
+        fetchAndRenderGeofences();
+      }
+      if (isRouteHistoryVisible && typeof fetchAndRenderRouteHistory === 'function') {
+        fetchAndRenderRouteHistory();
+      }
+      // Permitir hacer clic en cualquier punto del mapa para establecer geocerca
+      if (dedicatedLeafletMap && typeof setupMapClickListener === 'function') {
+        setupMapClickListener(dedicatedLeafletMap);
+      }
+    } catch (e) {
+      console.error('[Map] Error inicializando mapa dedicado:', e);
     }
   }
 }
@@ -2091,6 +2559,15 @@ function bindEvents() {
     });
   }
 
+  ['inputGeofenceName', 'inputGeofenceLat', 'inputGeofenceLng'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', () => {
+        el.style.borderColor = '';
+        el.style.boxShadow = '';
+      });
+    }
+  });
   const rangeGeofenceRadius = document.getElementById('rangeGeofenceRadius');
   if (rangeGeofenceRadius) {
     rangeGeofenceRadius.addEventListener('input', (e) => {
@@ -2148,6 +2625,33 @@ function bindEvents() {
 
   const btnMultiTabCaptureAudio = document.getElementById('btnMultiTabCaptureAudio');
   if (btnMultiTabCaptureAudio) btnMultiTabCaptureAudio.addEventListener('click', requestAudio5s);
+
+  // Barra de Captura Automática Periódica
+  const btnToggleAutoCapture = document.getElementById('btnToggleAutoCapture');
+  if (btnToggleAutoCapture) {
+    btnToggleAutoCapture.addEventListener('click', toggleAutoCapture);
+  }
+
+  // Modal: Editar Perfil de Hijo y Dispositivo
+  const btnCloseEditChildModal = document.getElementById('btnCloseEditChildModal');
+  if (btnCloseEditChildModal) btnCloseEditChildModal.addEventListener('click', closeEditChildModal);
+
+  const btnCancelEditChild = document.getElementById('btnCancelEditChild');
+  if (btnCancelEditChild) btnCancelEditChild.addEventListener('click', closeEditChildModal);
+
+  const btnSaveChildProfile = document.getElementById('btnSaveChildProfile');
+  if (btnSaveChildProfile) btnSaveChildProfile.addEventListener('click', saveChildProfile);
+
+  const editAvatarPicker = document.getElementById('editChildAvatarPicker');
+  if (editAvatarPicker) {
+    editAvatarPicker.addEventListener('click', (e) => {
+      const btn = e.target.closest('.avatar-option-btn');
+      if (!btn) return;
+      document.querySelectorAll('#editChildAvatarPicker .avatar-option-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedEditAvatar = btn.getAttribute('data-avatar') || '👦';
+    });
+  }
 
   // Pestaña Configuraciones: Guardado de Ajustes
   const btnSaveGpsSettings = document.getElementById('btnSaveGpsSettings');
@@ -2948,6 +3452,7 @@ function renderDeviceSelector(selectedIdToSet) {
 }
 
 async function onDeviceSelected(deviceId, updateDropdown = true) {
+  closeVideoClipOverlay();
   if (!deviceId) {
     currentDevice = null;
     renderNoDeviceState();
@@ -2963,6 +3468,9 @@ async function onDeviceSelected(deviceId, updateDropdown = true) {
   if (isRouteHistoryVisible) {
     fetchAndRenderRouteHistory();
   }
+  if (typeof currentDashboardView !== 'undefined' && currentDashboardView === 'map') {
+    initDedicatedMap();
+  }
   if (currentDevice) {
     renderFamilyOverviewCards();
     showToast(`Supervisando ahora: ${currentDevice.childName || currentDevice.name}`, 'info');
@@ -2970,44 +3478,41 @@ async function onDeviceSelected(deviceId, updateDropdown = true) {
 }
 
 function openAddDeviceModal() {
-  const nameInput = document.getElementById('inputNewDeviceName');
   const childInput = document.getElementById('inputNewDeviceChildName');
+  const typeInput = document.getElementById('inputNewDeviceType');
   const avatarInput = document.getElementById('inputNewDeviceAvatar');
-  if (nameInput) nameInput.value = '';
   if (childInput) childInput.value = '';
+  if (typeInput) typeInput.value = 'celular';
   if (avatarInput) avatarInput.value = '👦';
   if (modalAddDevice) modalAddDevice.classList.add('active');
 }
 
 async function createNewDevice() {
-  const nameInput = document.getElementById('inputNewDeviceName');
   const childInput = document.getElementById('inputNewDeviceChildName');
+  const typeInput = document.getElementById('inputNewDeviceType');
   const avatarInput = document.getElementById('inputNewDeviceAvatar');
 
-  const rawName = nameInput ? nameInput.value.trim() : '';
-  const rawChild = childInput ? childInput.value.trim() : '';
+  const childName = childInput ? childInput.value.trim() : '';
+  const deviceType = typeInput ? typeInput.value : 'celular';
   const avatar = avatarInput ? avatarInput.value : '👦';
 
-  if (!rawName && !rawChild) {
-    alert('Por favor ingresa un nombre para el teléfono o menor a supervisar.');
+  if (!childName) {
+    showToast('Por favor ingresa el nombre de tu hijo o hija.', 'warning');
     return;
   }
-
-  const name = rawName || `Teléfono de ${rawChild}`;
-  const childName = rawChild || rawName;
 
   try {
     const res = await apiFetch('/api/devices', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, childName, avatar })
+      body: JSON.stringify({ childName, avatar, deviceType })
     });
     if (res.ok) {
       const data = await res.json();
       const createdDevice = data.device || {};
       const newId = createdDevice.id;
       if (modalAddDevice) modalAddDevice.classList.remove('active');
-      showToast(`Dispositivo "${name}" registrado con éxito`, 'success');
+      showToast(`Perfil de "${childName}" creado con éxito. El nombre y modelo del equipo se detectará al conectar el ${deviceType === 'tablet' ? 'tablet' : 'celular'}.`, 'success');
       await loadDevicesList(newId);
       await openPairingQrModal(newId);
     } else {
@@ -3137,6 +3642,13 @@ async function requestVideo5s() {
     const res = await fetch(`/api/devices/${currentDevice.id}/request-video`, { method: 'POST' });
     if (res.ok) {
       console.log('Petición de clip de video de 5 segundos enviada');
+      [2000, 4000, 6500, 9000].forEach(ms => {
+        setTimeout(() => {
+          if (typeof fetchAndRenderMultimediaGallery === 'function') {
+            fetchAndRenderMultimediaGallery(activeMultimediaFilter || 'all');
+          }
+        }, ms);
+      });
     }
   } catch (err) {
     console.error('Error solicitando video de 5 segundos', err);
@@ -3153,6 +3665,13 @@ async function requestVideo5s() {
 
 function handleNewVideoClip(frames, intervalMs = 500) {
   if (!frames || !frames.length) return;
+
+  if (currentDevice) {
+    currentDevice.isOnline = true;
+    currentDevice.lastSeen = new Date().toISOString();
+    renderHeader();
+    renderFamilyOverviewCards();
+  }
 
   currentVideoClip.frames = frames;
   currentVideoClip.intervalMs = intervalMs;
@@ -3270,6 +3789,13 @@ async function requestAudio5s() {
     const res = await fetch(`/api/devices/${currentDevice.id}/request-audio`, { method: 'POST' });
     if (res.ok) {
       console.log('Petición de audio ambiental de 5 segundos enviada');
+      [2000, 4000, 6500, 9000].forEach(ms => {
+        setTimeout(() => {
+          if (typeof fetchAndRenderMultimediaGallery === 'function') {
+            fetchAndRenderMultimediaGallery(activeMultimediaFilter || 'all');
+          }
+        }, ms);
+      });
     }
   } catch (err) {
     console.error('Error solicitando audio ambiental', err);
@@ -3294,6 +3820,13 @@ async function requestAudio5s() {
 
 function handleNewAudioClip(audioBase64, duration = 5, timestamp) {
   isAudioRecordingRequested = false;
+
+  if (currentDevice) {
+    currentDevice.isOnline = true;
+    currentDevice.lastSeen = timestamp || new Date().toISOString();
+    renderHeader();
+    renderFamilyOverviewCards();
+  }
 
   const btnCaptureAudioText = document.getElementById('btnCaptureAudioText');
   const btnCaptureAudioIcon = document.getElementById('btnCaptureAudioIcon');
@@ -3351,7 +3884,8 @@ function handleNewAudioClip(audioBase64, duration = 5, timestamp) {
 // Geofences Management (Colegio, Casa, Parques)
 // ----------------------------------------------------------------
 async function fetchAndRenderGeofences() {
-  if (!leafletMap) return;
+  if (!leafletMap && !dedicatedLeafletMap) return;
+  if (!currentDevice) return;
 
   try {
     const res = await fetch(`/api/devices/${currentDevice.id}/geofences`);
@@ -3369,29 +3903,51 @@ function clearGeofencesFromMap() {
     if (leafletMap) leafletMap.removeLayer(layer);
   });
   leafletGeofencesLayers = [];
+
+  dedicatedGeofencesLayers.forEach(layer => {
+    if (dedicatedLeafletMap) dedicatedLeafletMap.removeLayer(layer);
+  });
+  dedicatedGeofencesLayers = [];
 }
 
 function renderGeofencesOnMap(geofences) {
   clearGeofencesFromMap();
-  if (!areGeofencesVisible || !leafletMap || !Array.isArray(geofences)) return;
+  if (!areGeofencesVisible || !Array.isArray(geofences)) return;
 
   geofences.forEach(geo => {
     const isSchool = geo.name.toLowerCase().includes('colegio') || geo.name.toLowerCase().includes('escuela');
     const isHome = geo.name.toLowerCase().includes('casa') || geo.name.toLowerCase().includes('hogar');
     const color = isSchool ? '#3b82f6' : (isHome ? '#10b981' : '#f59e0b');
 
-    const circle = L.circle([geo.latitude, geo.longitude], {
-      radius: geo.radiusMeters || 200,
-      color: color,
-      fillColor: color,
-      fillOpacity: 0.18,
-      weight: 2,
-      dashArray: '4, 4'
-    }).addTo(leafletMap);
+    // Dibujar en mapa de resumen
+    if (leafletMap) {
+      const circle = L.circle([geo.latitude, geo.longitude], {
+        radius: geo.radiusMeters || 200,
+        color: color,
+        fillColor: color,
+        fillOpacity: 0.18,
+        weight: 2,
+        dashArray: '4, 4'
+      }).addTo(leafletMap);
 
-    circle.bindPopup(`<b>${geo.name}</b><br>Radio seguro: ${geo.radiusMeters}m<br><span style="font-size:0.75rem; color:#94a3b8;">Alertas activas: Entrada y Salida</span>`);
+      circle.bindPopup(`<b>${geo.name}</b><br>Radio seguro: ${geo.radiusMeters}m<br><span style="font-size:0.75rem; color:#94a3b8;">Alertas activas: Entrada y Salida</span>`);
+      leafletGeofencesLayers.push(circle);
+    }
 
-    leafletGeofencesLayers.push(circle);
+    // Dibujar en mapa dedicado
+    if (dedicatedLeafletMap) {
+      const circleDedicated = L.circle([geo.latitude, geo.longitude], {
+        radius: geo.radiusMeters || 200,
+        color: color,
+        fillColor: color,
+        fillOpacity: 0.18,
+        weight: 2,
+        dashArray: '4, 4'
+      }).addTo(dedicatedLeafletMap);
+
+      circleDedicated.bindPopup(`<b>${geo.name}</b><br>Radio seguro: ${geo.radiusMeters}m<br><span style="font-size:0.75rem; color:#94a3b8;">Alertas activas: Entrada y Salida</span>`);
+      dedicatedGeofencesLayers.push(circleDedicated);
+    }
   });
 }
 
@@ -3400,6 +3956,10 @@ function toggleGeofencesVisibility() {
   const btnToggleGeofences = document.getElementById('btnToggleGeofences');
   if (btnToggleGeofences) {
     btnToggleGeofences.style.opacity = areGeofencesVisible ? '1' : '0.6';
+  }
+  const btnMapTabGeofences = document.getElementById('btnMapTabGeofences');
+  if (btnMapTabGeofences) {
+    btnMapTabGeofences.style.opacity = areGeofencesVisible ? '1' : '0.6';
   }
   if (areGeofencesVisible) {
     fetchAndRenderGeofences();
@@ -3509,21 +4069,58 @@ async function saveNewGeofence() {
   const checkEntry = document.getElementById('checkGeofenceAlertEntry');
   const checkExit = document.getElementById('checkGeofenceAlertExit');
 
+  // Limpiar estilos de error previos
+  [nameInput, latInput, lngInput].forEach(input => {
+    if (input) {
+      input.style.borderColor = '';
+      input.style.boxShadow = '';
+    }
+  });
+
   const name = nameInput ? nameInput.value.trim() : '';
-  const lat = parseFloat(latInput ? latInput.value : 0);
-  const lng = parseFloat(lngInput ? lngInput.value : 0);
+  const rawLat = latInput ? latInput.value.trim() : '';
+  const rawLng = lngInput ? lngInput.value.trim() : '';
+  const lat = parseFloat(rawLat);
+  const lng = parseFloat(rawLng);
   const radius = parseInt(radiusInput ? radiusInput.value : 250, 10);
   const alertOnEntry = checkEntry ? checkEntry.checked : true;
   const alertOnExit = checkExit ? checkExit.checked : true;
 
+  let hasMissingField = false;
+
+  // Validación de campo: Nombre
   if (!name) {
-    alert('Por favor ingresa un nombre para el lugar seguro (ej: Colegio, Casa)');
-    return;
+    if (nameInput) {
+      nameInput.style.borderColor = '#ef4444';
+      nameInput.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.35)';
+      nameInput.focus();
+    }
+    showToast('⚠️ Falta ingresar el Nombre del Lugar Seguro (ej: Colegio, Casa)', 'warning');
+    hasMissingField = true;
   }
-  if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
-    alert('Por favor ingresa coordenadas GPS válidas o pulsa "🎯 Usar Posición Actual"');
-    return;
+
+  // Validación de campos: Latitud y Longitud
+  const isLatInvalid = !rawLat || isNaN(lat);
+  const isLngInvalid = !rawLng || isNaN(lng);
+
+  if (isLatInvalid || isLngInvalid) {
+    if (isLatInvalid && latInput) {
+      latInput.style.borderColor = '#ef4444';
+      latInput.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.35)';
+    }
+    if (isLngInvalid && lngInput) {
+      lngInput.style.borderColor = '#ef4444';
+      lngInput.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.35)';
+    }
+    if (!hasMissingField) {
+      if (isLatInvalid && latInput) latInput.focus();
+      else if (isLngInvalid && lngInput) lngInput.focus();
+      showToast('⚠️ Faltan las coordenadas GPS. Haz clic en el mapa o pulsa "Usar Posición Actual"', 'warning');
+    }
+    hasMissingField = true;
   }
+
+  if (hasMissingField) return;
 
   try {
     const payload = {
@@ -3543,38 +4140,76 @@ async function saveNewGeofence() {
     });
 
     if (res.ok) {
-      showToast(`Lugar seguro "${name}" guardado con éxito`, 'success');
+      showToast(`✅ Lugar seguro "${name}" guardado con éxito`, 'success');
       if (nameInput) nameInput.value = '';
+      if (latInput) latInput.value = '';
+      if (lngInput) lngInput.value = '';
+
+      if (tempGeofenceMarker) {
+        try {
+          if (dedicatedLeafletMap) dedicatedLeafletMap.removeLayer(tempGeofenceMarker);
+          if (leafletMap) leafletMap.removeLayer(tempGeofenceMarker);
+        } catch (e) {}
+        tempGeofenceMarker = null;
+      }
+
       await loadAndRenderGeofencesInModal();
       if (typeof fetchAndRenderGeofences === 'function') {
         fetchAndRenderGeofences();
       }
+
+      // Cerrar la pestaña / modal automáticamente tras guardar
+      closeGeofenceManagerModal();
     } else {
-      alert('Error al guardar el lugar. Revisa los datos.');
+      showToast('Error al guardar el lugar. Revisa los datos.', 'danger');
     }
   } catch (err) {
     console.error('Error guardando geocerca:', err);
-    alert('Error de conexión al guardar el lugar.');
+    showToast('Error de conexión al guardar el lugar', 'danger');
   }
 }
 
 async function deleteGeofenceItem(geoId) {
   if (!currentDevice) return;
-  if (!confirm('¿Deseas eliminar este lugar seguro?')) return;
+  const confirmDelete = window.confirm('¿Deseas eliminar este lugar seguro?');
+  if (!confirmDelete) return;
+
+  const itemEl = document.getElementById(`geoItem-${geoId}`);
+  if (itemEl) {
+    itemEl.style.opacity = '0.35';
+    itemEl.style.pointerEvents = 'none';
+  }
 
   try {
-    const res = await apiFetch(`/api/devices/${currentDevice.id}/geofences/${geoId}`, {
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/geofences/${encodeURIComponent(geoId)}`, {
       method: 'DELETE'
     });
+
     if (res.ok) {
-      showToast('Lugar eliminado correctamente', 'info');
-      await loadAndRenderGeofencesInModal();
+      if (Array.isArray(modalGeofencesList)) {
+        modalGeofencesList = modalGeofencesList.filter(g => g.id !== geoId);
+        renderGeofencesListInModal(modalGeofencesList);
+      }
+      showToast('🗑️ Lugar eliminado correctamente', 'info');
+
       if (typeof fetchAndRenderGeofences === 'function') {
         fetchAndRenderGeofences();
       }
+      await loadAndRenderGeofencesInModal();
+    } else {
+      if (itemEl) {
+        itemEl.style.opacity = '1';
+        itemEl.style.pointerEvents = 'auto';
+      }
+      showToast('Error al eliminar el lugar', 'danger');
     }
   } catch (err) {
     console.error('Error eliminando geocerca:', err);
+    if (itemEl) {
+      itemEl.style.opacity = '1';
+      itemEl.style.pointerEvents = 'auto';
+    }
+    showToast('Error de conexión al eliminar', 'danger');
   }
 }
 
@@ -3666,6 +4301,13 @@ function clearRouteHistoryFromMap() {
   }
   leafletRouteMarkers.forEach(m => leafletMap && leafletMap.removeLayer(m));
   leafletRouteMarkers = [];
+
+  if (dedicatedRoutePolyline && dedicatedLeafletMap) {
+    dedicatedLeafletMap.removeLayer(dedicatedRoutePolyline);
+    dedicatedRoutePolyline = null;
+  }
+  dedicatedRouteMarkers.forEach(m => dedicatedLeafletMap && dedicatedLeafletMap.removeLayer(m));
+  dedicatedRouteMarkers = [];
 }
 
 function renderRouteHistoryOnMap(points) {
@@ -3686,30 +4328,52 @@ function renderRouteHistoryOnMap(points) {
     .filter(p => typeof p.latitude === 'number' && typeof p.longitude === 'number')
     .map(p => [p.latitude, p.longitude]);
 
-  if (latlngs.length >= 2 && leafletMap && typeof L !== 'undefined') {
-    // Trazar línea de ruta en verde esmeralda con guiones dinámicos
-    leafletRoutePolyline = L.polyline(latlngs, {
-      color: '#10b981',
-      weight: 4,
-      opacity: 0.85,
-      dashArray: '6, 8',
-      lineCap: 'round'
-    }).addTo(leafletMap);
+  if (latlngs.length >= 2 && typeof L !== 'undefined') {
+    // Trazar en mapa de resumen
+    if (leafletMap) {
+      leafletRoutePolyline = L.polyline(latlngs, {
+        color: '#10b981',
+        weight: 4,
+        opacity: 0.85,
+        dashArray: '6, 8',
+        lineCap: 'round'
+      }).addTo(leafletMap);
 
-    // Marcador de Inicio de Ruta
-    const startPoint = latlngs[0];
-    const startMarker = L.circleMarker(startPoint, {
-      radius: 6,
-      fillColor: '#60a5fa',
-      color: '#ffffff',
-      weight: 2,
-      opacity: 1,
-      fillOpacity: 0.9
-    }).addTo(leafletMap).bindPopup('🏁 Inicio de recorrido');
-    leafletRouteMarkers.push(startMarker);
+      const startPoint = latlngs[0];
+      const startMarker = L.circleMarker(startPoint, {
+        radius: 6,
+        fillColor: '#60a5fa',
+        color: '#ffffff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.9
+      }).addTo(leafletMap).bindPopup('🏁 Inicio de recorrido');
+      leafletRouteMarkers.push(startMarker);
+      leafletMap.fitBounds(leafletRoutePolyline.getBounds(), { padding: [30, 30] });
+    }
 
-    // Ajustar zoom para mostrar la ruta completa
-    leafletMap.fitBounds(leafletRoutePolyline.getBounds(), { padding: [30, 30] });
+    // Trazar en mapa dedicado
+    if (dedicatedLeafletMap) {
+      dedicatedRoutePolyline = L.polyline(latlngs, {
+        color: '#10b981',
+        weight: 4,
+        opacity: 0.85,
+        dashArray: '6, 8',
+        lineCap: 'round'
+      }).addTo(dedicatedLeafletMap);
+
+      const startPoint = latlngs[0];
+      const startMarkerDed = L.circleMarker(startPoint, {
+        radius: 6,
+        fillColor: '#60a5fa',
+        color: '#ffffff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.9
+      }).addTo(dedicatedLeafletMap).bindPopup('🏁 Inicio de recorrido');
+      dedicatedRouteMarkers.push(startMarkerDed);
+      dedicatedLeafletMap.fitBounds(dedicatedRoutePolyline.getBounds(), { padding: [30, 30] });
+    }
   }
 
   // Renderizar la lista de puntos en el panel
@@ -4387,6 +5051,14 @@ function updateSubscriptionUI() {
     familyPlanBadge.textContent = displayName;
   }
 
+  // Actualizar indicador de cuota de dispositivos en Mi Familia
+  const familyDevicesUsageText = document.getElementById('familyDevicesUsageText');
+  if (familyDevicesUsageText) {
+    const count = (devicesList && Array.isArray(devicesList)) ? devicesList.length : 0;
+    const maxDevs = currentSubscription.maxDevices || 5;
+    familyDevicesUsageText.textContent = `${count} / ${maxDevs} permitidos`;
+  }
+
   const btnFamilyUpgradePlan = document.getElementById('btnFamilyUpgradePlan');
   if (btnFamilyUpgradePlan) {
     if (plan === 'free') {
@@ -4600,6 +5272,8 @@ async function changeSubscriptionPlan(newPlan) {
       currentSubscription.plan = data.plan;
       currentSubscription.maxDevices = data.maxDevices;
       updateSubscriptionUI();
+      renderFamilyTab();
+      renderFamilyOverviewCards();
       modalSubscription.classList.remove('active');
       showToast(`⭐ ¡Plan actualizado a ${newPlan === 'family_total' ? 'Familia Total VIP' : newPlan === 'pro' ? 'Familiar Pro' : 'Plan Gratuito'}!`, 'success');
     } else {
@@ -4843,21 +5517,35 @@ function setupWebSocket() {
             renderHeader();
             renderHero();
           }
+          renderFamilyOverviewCards();
+          renderFamilyChildrenCards();
           if (!isOnline) {
             showToast(message || `⚠️ Conexión perdida con ${dev?.name || id}. Posible desinstalación o sin red.`, 'warning');
             playAlertSound();
             triggerWebNotification('⚠️ Dispositivo Desconectado', message || `Se perdió la conexión con ${dev?.name || id}.`);
           }
         } else if (data.type === 'DEVICE_DELETED') {
-          showToast(`Dispositivo ${data.payload?.id || ''} fue desvinculado`, 'info');
-          devicesList = devicesList.filter(d => d.id !== data.payload?.id);
-          if (currentDevice && currentDevice.id === data.payload?.id) {
-            currentDevice = null;
-            localStorage.removeItem('kidsshield_active_device_id');
-            renderNoDeviceState();
-            switchView('portal');
+          const deletedId = data.payload?.id;
+          showToast(`Dispositivo ${deletedId || ''} fue desvinculado y liberado`, 'info');
+          devicesList = devicesList.filter(d => d.id !== deletedId);
+          if (currentDevice && currentDevice.id === deletedId) {
+            if (devicesList.length > 0) {
+              onDeviceSelected(devicesList[0].id);
+            } else {
+              currentDevice = null;
+              localStorage.removeItem('kidsshield_active_device_id');
+              renderNoDeviceState();
+            }
           }
           renderDeviceSelector();
+          renderFamilyOverviewCards();
+          renderFamilyChildrenCards();
+          syncChildContextSelectors();
+          const familyDevicesUsageText = document.getElementById('familyDevicesUsageText');
+          if (familyDevicesUsageText) {
+            const sub = (typeof currentSubscription !== 'undefined' && currentSubscription) ? currentSubscription : { maxDevices: 5 };
+            familyDevicesUsageText.textContent = `${devicesList.length} / ${sub.maxDevices || 5} permitidos`;
+          }
         } else if (data.type === 'EVENT_RECORDED' && currentDevice && data.payload.id === currentDevice.id) {
           if (!currentDevice.activityLog) currentDevice.activityLog = [];
           currentDevice.activityLog.unshift(data.payload.event);
@@ -4870,9 +5558,20 @@ function setupWebSocket() {
         } else if (data.type === 'CONFIG_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
           Object.assign(currentDevice, data.payload.config);
           renderHero();
+        } else if (data.type === 'SUBSCRIPTION_UPDATED') {
+          if (data.payload) {
+            currentSubscription.plan = data.payload.plan;
+            currentSubscription.maxDevices = data.payload.maxDevices;
+            updateSubscriptionUI();
+            renderFamilyTab();
+            renderFamilyOverviewCards();
+          }
         } else if (data.type === 'DEVICE_CREATED' || data.type === 'DEVICES_UPDATED') {
           const newId = data.payload?.id;
           await loadDevicesList(newId || (currentDevice ? currentDevice.id : null));
+          renderFamilyOverviewCards();
+          renderFamilyChildrenCards();
+          syncChildContextSelectors();
           if (currentDashboardView === 'devices') {
             renderDevicesTab();
           }
@@ -4881,10 +5580,18 @@ function setupWebSocket() {
             playAlertSound();
           }
         } else if (data.type === 'SCREENSHOT_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
+          closeVideoClipOverlay();
+          currentDevice.isOnline = true;
+          currentDevice.lastSeen = data.payload.timestamp || new Date().toISOString();
+          renderHeader();
+          renderFamilyOverviewCards();
           if (!isLivePaused) {
             currentDevice.lastScreenshot = data.payload.imageBase64 || data.payload.screenshot;
             currentDevice.lastScreenshotTime = data.payload.timestamp;
             renderSimulator();
+          }
+          if (typeof fetchAndRenderMultimediaGallery === 'function') {
+            fetchAndRenderMultimediaGallery(activeMultimediaFilter || 'all');
           }
 
           const btnText = document.getElementById('btnCaptureScreenText');
@@ -4896,13 +5603,30 @@ function setupWebSocket() {
           showToast('📸 ¡Captura de pantalla recibida!', 'success');
         } else if (data.type === 'VIDEO_CLIP_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
           handleNewVideoClip(data.payload.frames, data.payload.intervalMs || 500);
+          if (typeof fetchAndRenderMultimediaGallery === 'function') {
+            fetchAndRenderMultimediaGallery(activeMultimediaFilter || 'all');
+          }
         } else if ((data.type === 'AUDIO_CLIP_UPDATED' || data.type === 'AUDIO_CLIP_READY') && currentDevice && data.payload.id === currentDevice.id) {
           handleNewAudioClip(data.payload.audioBase64, data.payload.duration || 5, data.payload.timestamp);
+          if (typeof fetchAndRenderMultimediaGallery === 'function') {
+            fetchAndRenderMultimediaGallery(activeMultimediaFilter || 'all');
+          }
+        } else if (data.type === 'MULTIMEDIA_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
+          if (typeof fetchAndRenderMultimediaGallery === 'function') {
+            fetchAndRenderMultimediaGallery(activeMultimediaFilter || 'all');
+          }
         } else if (data.type === 'GEOFENCE_UPDATED' || data.type === 'GEOFENCE_DELETED') {
           fetchAndRenderGeofences();
         } else if (data.type === 'LOCATION_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
           currentDevice.location = data.payload.location;
+          currentDevice.isOnline = true;
+          currentDevice.lastSeen = new Date().toISOString();
+          renderHeader();
+          renderFamilyOverviewCards();
           renderMap();
+          if (typeof currentDashboardView !== 'undefined' && currentDashboardView === 'map') {
+            initDedicatedMap();
+          }
           if (isRouteHistoryVisible) {
             fetchAndRenderRouteHistory();
           }
@@ -4937,6 +5661,7 @@ async function requestScreenshotNow() {
     openPairingQrModal();
     return;
   }
+  closeVideoClipOverlay();
   const btnText = document.getElementById('btnCaptureScreenText');
   const btnIcon = document.getElementById('btnCaptureScreenIcon');
   const statusText = document.getElementById('simScreenshotStatusText');
@@ -4951,7 +5676,20 @@ async function requestScreenshotNow() {
 
     const res = await fetch(`/api/devices/${currentDevice.id}/request-screenshot`, { method: 'POST' });
     if (res.ok) {
+      currentDevice.isOnline = true;
+      currentDevice.lastSeen = new Date().toISOString();
+      renderHeader();
+      renderFamilyOverviewCards();
       console.log('Petición de captura transmitida al servidor');
+
+      // Refresco inmediato y diferido de la galería multimedia
+      [800, 1800, 3200, 5000].forEach(ms => {
+        setTimeout(() => {
+          if (typeof fetchAndRenderMultimediaGallery === 'function') {
+            fetchAndRenderMultimediaGallery(activeMultimediaFilter || 'all');
+          }
+        }, ms);
+      });
     }
   } catch (err) {
     console.error('Error al solicitar captura', err);

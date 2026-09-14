@@ -35,12 +35,16 @@ const devices = {};
 const unlinkedDevices = new Set();
 
 // Default device template (Sin datos ficticios: esperando telemetría real del teléfono móvil)
-function createDefaultDevice(id, name, childName, avatar = '📱') {
+function createDefaultDevice(id, name, childName, avatar = '📱', deviceType = 'celular') {
   return {
     id,
-    name: name || 'Teléfono del Menor',
-    childName: childName || 'Hijo',
-    avatar: avatar || '📱',
+    name: name || 'Esperando conexión...',
+    childName: childName || (id === 'KID-PHONE-01' ? 'Seba' : 'Hijo'),
+    avatar: avatar || '👦',
+    deviceType: (deviceType === 'tablet') ? 'tablet' : 'celular',
+    hasConnected: false,
+    model: '',
+    manufacturer: '',
     isOnline: false,
     battery: null,
     lastSeen: null,
@@ -98,6 +102,10 @@ async function bootstrap() {
       d.pendingCommands = [];
       const realLogs = await db.getActivityLogs(d.id, 30);
       d.activityLog = realLogs || [];
+      if (d.id === 'KID-PHONE-01' && (!d.childName || d.childName === 'Hijo' || d.childName === 'Mateo' || d.childName === 'Hijo 1')) {
+        d.childName = 'Seba';
+        db.saveDevice(d).catch(() => {});
+      }
       devices[d.id] = d;
     }
     console.log(`[Database] Cargados ${dbDevices.length} dispositivos desde la base de datos.`);
@@ -117,6 +125,34 @@ function broadcast(type, payload) {
   });
 }
 
+// Mark device as actively online and notify subscribers if state changed
+function markDeviceOnline(device) {
+  if (!device) return;
+  const now = new Date().toISOString();
+  const wasOffline = !device.isOnline;
+  device.isOnline = true;
+  device.lastSeen = now;
+
+  if (wasOffline) {
+    console.log(`[Watchdog] 🟢 Dispositivo ${device.id} (${device.name}) reconectado.`);
+    try {
+      db.client.execute({
+        sql: 'UPDATE devices SET is_online = 1, last_seen = ? WHERE id = ?',
+        args: [now, device.id]
+      }).catch(err => console.error('[DB] Error actualizando is_online:', err));
+    } catch (e) {}
+
+    broadcast('DEVICE_STATUS_CHANGED', {
+      id: device.id,
+      name: device.name,
+      isOnline: true,
+      lastSeen: now,
+      message: `🟢 Dispositivo ${device.name} conectado.`
+    });
+    broadcast('DEVICE_UPDATED', device);
+  }
+}
+
 wss.on('connection', (ws) => {
   console.log('[WS] Cliente conectado');
   ws.send(JSON.stringify({ type: 'CONNECTED', payload: { message: 'Conectado al servidor KidsShield' } }));
@@ -126,6 +162,9 @@ wss.on('connection', (ws) => {
       const parsed = JSON.parse(msg);
       if (parsed.type === 'PING') {
         ws.send(JSON.stringify({ type: 'PONG' }));
+      }
+      if (parsed.deviceId && devices[parsed.deviceId]) {
+        markDeviceOnline(devices[parsed.deviceId]);
       }
     } catch (e) {
       console.error('Error procesando WS message', e);
@@ -798,14 +837,17 @@ app.post('/api/devices', async (req, res) => {
 
   const count = Object.keys(devices).length + 1;
   const id = `KID-PHONE-${String(count).padStart(2, '0')}`;
+  const devType = (req.body.deviceType === 'tablet') ? 'tablet' : 'celular';
+  const initialName = req.body.name || `Esperando conexión (${devType === 'tablet' ? 'Tablet' : 'Celular'})...`;
 
-  const newDevice = createDefaultDevice(id, name || `Teléfono ${count}`, childName || `Hijo ${count}`, avatar || '📱');
+  const newDevice = createDefaultDevice(id, initialName, childName || `Hijo ${count}`, avatar || '👦', devType);
   newDevice.familyId = familyId;
+  newDevice.hasConnected = false;
   unlinkedDevices.delete(id);
   devices[id] = newDevice;
   await db.saveDevice(newDevice);
 
-  console.log(`[Devices] ➕ Nuevo dispositivo creado: ${newDevice.id} (${newDevice.name})`);
+  console.log(`[Devices] ➕ Nuevo dispositivo registrado: ${newDevice.id} (${newDevice.childName}, tipo: ${newDevice.deviceType})`);
   broadcast('DEVICE_CREATED', newDevice);
   res.json({ success: true, device: newDevice });
 });
@@ -993,6 +1035,23 @@ app.post('/api/devices/:id/config', async (req, res) => {
   res.json({ success: true, device });
 });
 
+// Rename child / device profile (Mi Familia: modificar nombre del usuario/hijo y dispositivo)
+app.post('/api/devices/:id/rename', async (req, res) => {
+  const device = devices[req.params.id];
+  if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
+
+  const { childName, name, avatar, deviceType } = req.body;
+  if (childName && childName.trim()) device.childName = childName.trim();
+  if (name && name.trim()) device.name = name.trim();
+  if (avatar) device.avatar = avatar;
+  if (deviceType && (deviceType === 'tablet' || deviceType === 'celular')) device.deviceType = deviceType;
+
+  await db.saveDevice(device);
+  console.log(`[Devices] ✏️ Perfil actualizado para ${device.id}: Niño="${device.childName}", Disp="${device.name}", Tipo="${device.deviceType}"`);
+  broadcast('DEVICE_UPDATED', device);
+  res.json({ success: true, device });
+});
+
 // Toggle individual app block status
 app.post('/api/devices/:id/toggle-app', async (req, res) => {
   const device = devices[req.params.id];
@@ -1021,6 +1080,39 @@ app.post('/api/devices/:id/toggle-app', async (req, res) => {
   res.json({ success: true, device });
 });
 
+// Toggle device lock state (used by quick lock buttons in family cards & overview)
+app.post('/api/devices/:id/toggle-lock', async (req, res) => {
+  const device = devices[req.params.id];
+  if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
+
+  const isLocked = typeof req.body.isLocked === 'boolean' ? req.body.isLocked : !device.isLocked;
+  device.isLocked = isLocked;
+  device.lockReason = isLocked ? (req.body.lockReason || 'Bloqueo inmediato solicitado por los padres') : '';
+
+  if (!device.pendingCommands) device.pendingCommands = [];
+  device.pendingCommands.push(isLocked ? 'LOCK_DEVICE' : 'UNLOCK_DEVICE');
+
+  const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const logMsg = isLocked ? `🔒 Dispositivo bloqueado remotamente: "${device.lockReason}"` : '🔓 Dispositivo desbloqueado por los padres';
+
+  device.activityLog = device.activityLog || [];
+  device.activityLog.unshift({
+    time: timeStr,
+    type: isLocked ? 'lock' : 'unlock',
+    message: logMsg
+  });
+
+  await db.saveDevice(device);
+  await db.logActivity(device.id, timeStr, isLocked ? 'lock' : 'unlock', logMsg, device.familyId || 'FAM-DEFAULT-01');
+
+  broadcast('COMMAND', { id: device.id, command: isLocked ? 'LOCK_DEVICE' : 'UNLOCK_DEVICE', isLocked });
+  broadcast('LOCK_STATE_CHANGED', { id: device.id, isLocked: device.isLocked });
+  broadcast('DEVICE_UPDATED', device);
+
+  console.log(`[Lock] ${isLocked ? '🔒 Bloqueado' : '🔓 Desbloqueado'} dispositivo ${device.id} (${device.name})`);
+  res.json({ success: true, isLocked: device.isLocked, device });
+});
+
 // ----------------------------------------------------------------
 // Screen Capture & 5s Video Clips
 // ----------------------------------------------------------------
@@ -1035,6 +1127,7 @@ app.post('/api/devices/:id/screenshot', async (req, res) => {
     return res.status(400).json({ error: 'Falta imagen' });
   }
 
+  markDeviceOnline(device);
   console.log(`[Screenshot] ✅ Recibida captura de pantalla de ${device.name} (${Math.round(img.length / 1024)} KB)`);
 
   device.lastScreenshot = img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`;
@@ -1055,6 +1148,7 @@ app.post('/api/devices/:id/screenshot', async (req, res) => {
     screenshot: device.lastScreenshot,
     timestamp: device.lastScreenshotTime
   });
+  broadcast('MULTIMEDIA_UPDATED', { id: device.id, type: 'image', timestamp: device.lastScreenshotTime });
   broadcast('DEVICE_UPDATED', device);
   res.json({ success: true });
 });
@@ -1095,6 +1189,7 @@ app.post('/api/devices/:id/video-clip', async (req, res) => {
     return res.status(400).json({ error: 'Faltan fotogramas del clip de video' });
   }
 
+  markDeviceOnline(device);
   const calcInterval = intervalMs || Math.round((durationMs || 5000) / frames.length) || 500;
   console.log(`[Video] 🎥 Clip de video de 5s recibido de ${device.name} (${frames.length} fotogramas, ~${calcInterval}ms/frame)`);
   await db.saveVideoClip(device.id, frames, durationMs || 5000);
@@ -1119,6 +1214,7 @@ app.post('/api/devices/:id/video-clip', async (req, res) => {
     durationMs: durationMs || 5000,
     timestamp: new Date().toISOString()
   });
+  broadcast('MULTIMEDIA_UPDATED', { id: device.id, type: 'video', timestamp: new Date().toISOString() });
   broadcast('DEVICE_UPDATED', device);
   res.json({ success: true });
 });
@@ -1157,6 +1253,7 @@ app.post('/api/devices/:id/audio-clip', async (req, res) => {
     return res.status(400).json({ error: 'Faltan datos de audio' });
   }
 
+  markDeviceOnline(device);
   const audioFormatted = rawAudio.startsWith('data:') ? rawAudio : `data:audio/mp4;base64,${rawAudio}`;
   const durationSeconds = req.body.duration || 5;
 
@@ -1187,6 +1284,7 @@ app.post('/api/devices/:id/audio-clip', async (req, res) => {
     duration: durationSeconds,
     timestamp: device.lastAudioClipTime
   });
+  broadcast('MULTIMEDIA_UPDATED', { id: device.id, type: 'audio', timestamp: device.lastAudioClipTime });
   broadcast('DEVICE_UPDATED', device);
   res.json({ success: true });
 });
@@ -1307,37 +1405,8 @@ function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
 // Get Geofences for device
 app.get('/api/devices/:id/geofences', async (req, res) => {
   const deviceId = req.params.id;
-  let geofences = await db.getGeofences(deviceId);
-  if (geofences.length === 0) {
-    // Semillas por defecto: Colegio y Casa
-    const defaultGeofences = [
-      {
-        id: `GEO-SCHOOL-${deviceId}`,
-        deviceId,
-        name: 'Colegio 🏫',
-        latitude: -33.4420,
-        longitude: -70.6550,
-        radiusMeters: 250,
-        alertOnEntry: true,
-        alertOnExit: true
-      },
-      {
-        id: `GEO-HOME-${deviceId}`,
-        deviceId,
-        name: 'Casa 🏠',
-        latitude: -33.4489,
-        longitude: -70.6693,
-        radiusMeters: 180,
-        alertOnEntry: true,
-        alertOnExit: true
-      }
-    ];
-    for (const g of defaultGeofences) {
-      await db.saveGeofence(g);
-    }
-    geofences = await db.getGeofences(deviceId);
-  }
-  res.json(geofences);
+  const geofences = await db.getGeofences(deviceId);
+  res.json(geofences || []);
 });
 
 // Save or Update Geofence
@@ -1406,6 +1475,9 @@ app.post('/api/devices/:id/event', async (req, res) => {
   if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
 
   const { type, package: pkg, appName, message } = req.body;
+  if (type !== 'PROTECTION_DISABLED' && type !== 'APP_UNINSTALLED_BY_PARENT') {
+    markDeviceOnline(device);
+  }
   const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   let eventMessage = message || '';
   let eventType = type || 'info';
@@ -1504,9 +1576,27 @@ app.post('/api/devices/:id/report', async (req, res) => {
   }
 
   const device = devices[deviceId];
-  device.isOnline = true;
-  device.lastSeen = new Date().toISOString();
-  if (req.body.deviceName) device.name = req.body.deviceName;
+  markDeviceOnline(device);
+
+  // Detección automática del nombre/modelo del dispositivo al conectarse
+  const detectedModel = req.body.model || '';
+  const detectedManufacturer = req.body.manufacturer || '';
+  const detectedName = req.body.deviceName || (detectedManufacturer && detectedModel ? `${detectedManufacturer} ${detectedModel}` : detectedModel);
+
+  if (detectedName) {
+    const wasPending = !device.hasConnected || (typeof device.name === 'string' && device.name.startsWith('Esperando conexión'));
+    device.name = detectedName;
+    device.hasConnected = true;
+    if (detectedModel) device.model = detectedModel;
+    if (detectedManufacturer) device.manufacturer = detectedManufacturer;
+    if (wasPending) {
+      console.log(`[Devices] 📱 Dispositivo ${deviceId} conectado por primera vez. Modelo detectado: "${device.name}"`);
+    }
+  }
+
+  if (req.body.deviceType && (req.body.deviceType === 'tablet' || req.body.deviceType === 'celular')) {
+    device.deviceType = req.body.deviceType;
+  }
   if (typeof req.body.battery === 'number') {
     device.battery = req.body.battery;
     // Alerta automática de Batería Crítica (< 15%)
@@ -1683,7 +1773,7 @@ app.post('/api/devices/:id/report', async (req, res) => {
 // ----------------------------------------------------------------
 // Heartbeat Watchdog: Detects disconnected, turned-off or uninstalled devices
 // ----------------------------------------------------------------
-const HEARTBEAT_TIMEOUT_MS = 25000; // 25s without telemetry report (Android reports every 6s)
+const HEARTBEAT_TIMEOUT_MS = 60000; // 60s without telemetry report
 setInterval(async () => {
   const now = Date.now();
   for (const deviceId of Object.keys(devices)) {

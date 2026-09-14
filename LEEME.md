@@ -20,6 +20,9 @@
 - [Centro de Configuración y Facturación](#-centro-de-configuración-y-facturación)
 - [Recuperación de Contraseña y Correos](#-recuperación-de-contraseña-y-correos)
 - [Modelo de Monetización y Planes](#-modelo-de-monetización-y-planes)
+- [Lugares y Geocercas Seguras con Selección en Mapa](#-lugares-y-geocercas-seguras-con-selección-en-mapa)
+- [Captura Automática y Multimedia en Tiempo Real](#-captura-automática-y-multimedia-en-tiempo-real)
+- [Bloqueo Infranqueable en la App Android](#-bloqueo-infranqueable-en-la-app-android)
 - [Requisitos del Sistema](#-requisitos-del-sistema)
 - [Guía de Instalación y Despliegue](#-guía-de-instalación-y-despliegue)
   - [1. Configuración del Servidor y Base de Datos](#1-configuración-del-servidor-y-base-de-datos)
@@ -40,18 +43,22 @@
   - **1. Configuración de Dispositivos**: Selector contextual de menor con parámetros de GPS, límite diario de pantalla, modo descanso (Bedtime) y PIN parental.
   - **2. Configuración de Pago y Plan**: Tarjeta bancaria virtual interactiva, modal de actualización, conmutador de **Renovación Automática (Auto-Renew)**, cuota de dispositivos e historial de recibos con descarga PDF.
 - 📱 **Vinculación Rápida con Código QR Dinámico**: Generador de QR interactivo en modal emergente que despliega el código de emparejamiento familiar y dirección IP del servidor para sincronización instantánea con la cámara del menor.
-- 💎 **Gestión de Membresías y Estado Familiar**: Tarjeta lateral con visualización de nivel de suscripción (*Familia Total VIP 💎* / *Familiar Pro ⚡*) y botón de mejora/gestión sin solapamientos.
-- 🔒 **Bloqueo Instantáneo y Resiliente**: Bloqueo remoto del dispositivo en menos de 1 segundo mediante WebSockets y servicios nativos de accesibilidad y superposición de pantalla (`Draw over apps`).
+- 💎 **Gestión de Membresías y Estado Familiar**: Tarjeta lateral con visualización de nivel de suscripción (*Familia Total VIP 💎* / *Familiar Pro ⚡*) y ajuste reactivo del cupo de dispositivos permitidos.
+- 🔒 **Bloqueo Infranqueable Multi-Capa en Android**: Protección total contra evasión. Se bloquean los launchers de sistema (OneUI, Pixel, MIUI), se desactiva el botón Atrás y "Go Home", impidiendo que el menor continúe usando el móvil durante el bloqueo.
+- 👁️ **Visualización en Vivo sin Obstrucción**: El panel de padres permite observar la pantalla del menor en tiempo real incluso cuando el teléfono se encuentra bloqueado (remoción de la capa opaca "Teléfono Pausado").
+- 📍 **Geocercas Seguras con Selección en Mapa**: Marcación con un clic en el mapa satelital para capturar coordenadas al vuelo, validación con feedback visual de campos faltantes (borde rojo), cierre automático del modal al guardar y eliminación definitiva persistente.
+- 📸 **Captura Automática Periódica en Multimedia**: Supervisión periódica programada (fotos, clips de vídeo de 5s, grabaciones de audio ambiental de 5s o secuencia mixta) con intervalos de 30s a 5min y temporizador en vivo.
+- 🔄 **Galería Multimedia en Tiempo Real**: Recepción instantánea de fotos y clips de video mediante eventos WebSocket dedicados (`MULTIMEDIA_UPDATED`) y peticiones en cascada sin recargar la página.
+- 👨‍👩‍👧‍👦 **Administración de Perfiles en "Mi Familia"**: Modificación dinámica de nombre del hijo/a, modelo de terminal, tipo (📱 Celular o 📟 Tablet) y avatar interactivo, sincronizado con base de datos en tiempo real.
 - 🚀 **Asistente Inteligente de Permisos Android (6 Pasos)**: Interfaz en el móvil del menor que guía paso a paso al padre o tutor para conceder los permisos del sistema con un solo botón inteligente (*"Otorgar Siguiente Permiso Faltante"*).
 - ⏱️ **Límites de Uso y Horarios de Descanso (Bedtime)**: Asignación de tiempo límite diario global o por categoría de app, con bloqueo automático nocturno programable.
 - 🚫 **Gestión y Bloqueo de Aplicaciones**: Detección inmediata de aplicaciones no permitidas (TikTok, Roblox, redes sociales) cerrándolas al instante.
 - 📍 **Geolocalización Ininterrumpible y Protección GPS**: Monitoreo de ubicación continua en mapa interactivo satelital con detección e impedimento activo de intentos de desactivación de GPS.
 - 📧 **Recuperación Segura de Contraseña por Correo**: Sistema con tokens de seguridad criptográficos de 60 minutos de vigencia y plantillas de correo HTML responsivas profesionales vía Nodemailer (SMTP real o Ethereal Mail para pruebas locales).
-- 🔓 **Desvinculación y Liberación Remota**: Botón para eliminar o desvincular un dispositivo desde el panel de padres, enviando órdenes inmediatas (`UNLINK_DEVICE` y `UNLOCK_DEVICE`) para restablecer el teléfono del menor a su estado habitual y purgar su historial.
+- 🔓 **Desvinculación y Liberación Remota sin Pérdida de Sesión**: Desvinculación de terminales con liberación inmediata del móvil del menor manteniendo la sesión del padre activa en el panel de control.
 - 🎙️ **Modo Micrófono en Vivo**: Monitor ambiental en tiempo real con analizador de audio visual mediante Web Audio API para verificación de entorno seguro.
-- 🔋 **Telemetría y Estado de Batería**: Monitoreo constante del nivel de carga, conexión a internet y última actividad del menor.
+- 🔋 **Telemetría y Estado de Conectividad Real**: Detección fidedigna del estado en línea/desconectado, modelo de hardware y nivel de batería.
 - 🌐 **Soporte Tailscale / Red Local**: Detección automática de IPs de Tailscale y LAN para emparejamiento y control del dispositivo tanto dentro como fuera de casa sin necesidad de abrir puertos inseguros.
-- 👨‍👩‍👧‍👦 **Arquitectura Multi-Familia con Google Auth**: Aislamiento estricto de datos por familia; sincronización automática de foto de perfil y nombre real desde Google Identity Services.
 - ☁️ **Base de Datos Distribuida en la Nube**: Integración nativa con **Turso (LibSQL)** para alta disponibilidad y baja latencia global, con fallback automático a SQLite local (`server/kidsshield.db`).
 
 ---
@@ -157,6 +164,54 @@ El sistema incluye estructura de datos y gestión de suscripciones para familias
 | **Básico (Trial)** | 1 Teléfono | Bloqueo remoto, monitoreo de batería y límite de tiempo básico. | Gratis / 14 días |
 | **Pro Familiar** | Hasta 5 Teléfonos | Reglas por app, Bedtime automático, geolocalización continua y alertas. | $4.99 USD / mes |
 | **Total Family + Audio** | Ilimitados | Todo lo anterior + Escucha remota / Modo Micrófono en tiempo real, capturas remotas y soporte prioritario. | $9.99 USD / mes |
+
+---
+
+## 📍 Lugares y Geocercas Seguras con Selección en Mapa
+
+El módulo de Geocercas ofrece control geográfico perimetral intuitivo y dinámico:
+
+1. **Selección de Puntos con 1 Clic en el Mapa**:
+   - Al explorar el mapa satelital (tanto en el resumen general como en la vista dedicada de mapa), hacer clic en cualquier ubicación coloca un pin temporal interactivo con las coordenadas exactas (`lat`, `lng`) y el botón **"➕ Establecer Geocerca Aquí"**.
+   - Al pulsar el botón, se abre automáticamente el modal de creación de geocerca con la latitud y longitud ya precargadas.
+2. **Validación Visual Reactiva**:
+   - Si se intenta guardar una geocerca y falta el **Nombre**, la **Latitud** o la **Longitud**, el sistema resalta el campo en rojo brillante (`#ef4444`), enfoca el input de inmediato y muestra una notificación Toast guiando al usuario.
+   - Tan pronto el usuario introduce texto en el campo señalado, el resaltado de error se limpia de forma automática.
+3. **Cierre Automático al Guardar**:
+   - Tras guardar exitosamente el nuevo lugar seguro, el modal se cierra solo devolviendo al usuario a la vista del mapa con los nuevos círculos Leaflet dibujados.
+4. **Eliminación Definitiva y Persistente**:
+   - Los lugares seguros pueden eliminarse con confirmación. La fila se atenúa visualmente (UI optimista), se envía la orden de eliminación a la base de datos y se retira el círculo del mapa en tiempo real, garantizando que no reaparezcan al volver a ingresar.
+
+---
+
+## 📸 Captura Automática y Multimedia en Tiempo Real
+
+El área de Multimedia (`parent-dashboard/`) cuenta con automatización continua y sincronización instantánea:
+
+1. **Captura Automática Periódica**:
+   - **Selector de Modo**: 📸 Foto / Pantalla en vivo, 🎥 Clip de Vídeo (5s), 🎙️ Grabación de Audio Ambiental (5s) o 🔄 Secuencia Mixta rotativa.
+   - **Intervalos Programables**: Frecuencia de 30 segundos, 1 minuto, 2 minutos o 5 minutos.
+   - **Control y Monitoreo en Vivo**: Botón de activación / detención rápida con badge visual (`ACTIVA` / `Inactiva`) y cronómetro regresivo en segundos que indica el momento del próximo disparo automático.
+2. **Galería Reactiva sin Recargas**:
+   - Al recibir una nueva captura o clip desde el móvil del menor, el servidor propaga un evento WebSocket (`MULTIMEDIA_UPDATED`), provocando que la galería se actualice automáticamente en milisegundos sin requerir que el padre cambie de pestaña ni recargue la página.
+3. **Visualización Continua en Dispositivos Bloqueados**:
+   - Se eliminó cualquier velo u obstrucción ("Teléfono Pausado") en el simulador de pantalla del panel web, permitiendo a los padres monitorear la pantalla en tiempo real incluso durante los periodos en que el teléfono del menor permanece bloqueado.
+
+---
+
+## 🛡️ Bloqueo Infranqueable en la App Android
+
+El módulo Android (`child-android-app/`) implementa una política estricta y resiliente de bloqueo:
+
+1. **Supresión de Evasión por Launchers Nativos**:
+   - `AppBlockerAccessibilityService`: Cuando el estado `isDeviceLocked` está activo, se bloquean activamente todos los launchers del sistema (Samsung OneUI, Pixel Launcher, Xiaomi MIUI, Nova, etc.). Ninguna aplicación de terceros está permitida salvo llamadas de emergencia o la propia interfaz de KidsShield.
+   - Se eliminó la inyección de `GLOBAL_ACTION_HOME` durante el bloqueo para evitar que el menor vuelva a la pantalla de inicio del teléfono.
+2. **Blindaje de la Pantalla de Bloqueo (`LockOverlayActivity`)**:
+   - Se deshabilitó el botón físico/gesto de retroceso (`onBackPressed`) mientras el dispositivo esté bloqueado.
+   - Se retiró el botón "Volver al inicio" durante el bloqueo total.
+   - Mediante `onWindowFocusChanged()`, si alguna aplicación o notificación intenta superponerse o ganar foco, la pantalla de bloqueo de KidsShield se reposiciona inmediatamente al frente.
+3. **Vigilancia Cíclica en Segundo Plano**:
+   - `UsageMonitorService` ejecuta un ciclo de validación periódica cada 6 segundos; si detecta que el estado es bloqueado pero la actividad no está al frente, la invoca forzosamente de inmediato.
 
 ---
 

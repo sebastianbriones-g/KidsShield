@@ -120,6 +120,17 @@ async function initDb() {
       );
     `);
 
+    // Migraciones para soporte de tipo de dispositivo y modelo detectado
+    const devCols = [
+      "ALTER TABLE devices ADD COLUMN device_type TEXT DEFAULT 'celular'",
+      "ALTER TABLE devices ADD COLUMN has_connected INTEGER DEFAULT 0",
+      "ALTER TABLE devices ADD COLUMN model TEXT DEFAULT ''",
+      "ALTER TABLE devices ADD COLUMN manufacturer TEXT DEFAULT ''"
+    ];
+    for (const sql of devCols) {
+      try { await client.execute(sql); } catch (_) {}
+    }
+
     // 6. GPS Locations History
     await client.execute(`
       CREATE TABLE IF NOT EXISTS locations (
@@ -446,7 +457,11 @@ async function getAllDevices(familyId = null) {
       blockedApps: JSON.parse(row.blocked_apps_json || '[]'),
       appCatalog: JSON.parse(row.app_catalog_json || '[]'),
       lastScreenshot: row.last_screenshot,
-      lastScreenshotTime: row.last_screenshot_time
+      lastScreenshotTime: row.last_screenshot_time,
+      deviceType: row.device_type || 'celular',
+      hasConnected: Boolean(row.has_connected),
+      model: row.model || '',
+      manufacturer: row.manufacturer || ''
     }));
   } catch (e) {
     console.error('[Database] Error leyendo dispositivos:', e);
@@ -486,7 +501,11 @@ async function getDeviceById(id) {
       blockedApps: JSON.parse(row.blocked_apps_json || '[]'),
       appCatalog: JSON.parse(row.app_catalog_json || '[]'),
       lastScreenshot: row.last_screenshot,
-      lastScreenshotTime: row.last_screenshot_time
+      lastScreenshotTime: row.last_screenshot_time,
+      deviceType: row.device_type || 'celular',
+      hasConnected: Boolean(row.has_connected),
+      model: row.model || '',
+      manufacturer: row.manufacturer || ''
     };
   } catch (e) {
     console.error(`[Database] Error leyendo dispositivo ${id}:`, e);
@@ -506,12 +525,14 @@ async function saveDevice(device) {
           is_locked, lock_reason, parent_pin, screen_time_minutes, daily_limit_minutes,
           bedtime_enabled, bedtime_start, bedtime_end, current_active_app, current_active_app_name,
           app_limits_json, blocked_apps_json, app_catalog_json, last_screenshot, last_screenshot_time,
+          device_type, has_connected, model, manufacturer,
           created_at, updated_at
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
           ?, ?
         )
         ON CONFLICT(id) DO UPDATE SET
@@ -538,6 +559,10 @@ async function saveDevice(device) {
           app_catalog_json = excluded.app_catalog_json,
           last_screenshot = COALESCE(excluded.last_screenshot, devices.last_screenshot),
           last_screenshot_time = COALESCE(excluded.last_screenshot_time, devices.last_screenshot_time),
+          device_type = COALESCE(excluded.device_type, devices.device_type),
+          has_connected = COALESCE(excluded.has_connected, devices.has_connected),
+          model = COALESCE(excluded.model, devices.model),
+          manufacturer = COALESCE(excluded.manufacturer, devices.manufacturer),
           updated_at = excluded.updated_at;
       `,
       args: [
@@ -565,6 +590,10 @@ async function saveDevice(device) {
         JSON.stringify(device.appCatalog || []),
         device.lastScreenshot || null,
         device.lastScreenshotTime || null,
+        device.deviceType || 'celular',
+        device.hasConnected ? 1 : 0,
+        device.model || '',
+        device.manufacturer || '',
         now,
         now
       ]

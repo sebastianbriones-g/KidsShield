@@ -1098,6 +1098,46 @@
             </div>
           </div>
 
+          <!-- Barra de Captura Automática Periódica -->
+          <div class="auto-capture-banner" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.14), rgba(168, 85, 247, 0.1)); border: 1px solid rgba(99, 102, 241, 0.32); border-radius: 12px; padding: 12px 18px; margin-top: 14px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="font-size: 1.4rem; background: rgba(99, 102, 241, 0.2); width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center;">🔄</div>
+              <div>
+                <div style="font-weight: 700; color: #fff; font-size: 0.95rem; display: flex; align-items: center; gap: 8px;">
+                  <span>Captura Automática Periódica</span>
+                  <span id="autoCaptureLiveBadge" class="badge" style="background: rgba(148, 163, 184, 0.2); color: var(--text-muted); font-size: 0.72rem; padding: 2px 8px; border-radius: 20px;">Inactiva</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);" id="autoCaptureStatusMsg">Programa capturas automáticas constantes sin intervención manual</div>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <label for="autoCaptureTypeSelect" style="font-size: 0.82rem; color: var(--text-muted);">Tipo:</label>
+                <select id="autoCaptureTypeSelect" class="form-control" style="font-size: 0.82rem; padding: 5px 10px; background: rgba(15,23,42,0.8); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff;">
+                  <option value="photo">📸 Foto / Pantalla</option>
+                  <option value="video">🎥 Video (5s)</option>
+                  <option value="audio">🎙️ Audio Ambiental (5s)</option>
+                  <option value="sequence">🔄 Secuencia (Foto + Audio)</option>
+                </select>
+              </div>
+
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <label for="autoCaptureIntervalSelect" style="font-size: 0.82rem; color: var(--text-muted);">Cada:</label>
+                <select id="autoCaptureIntervalSelect" class="form-control" style="font-size: 0.82rem; padding: 5px 10px; background: rgba(15,23,42,0.8); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff;">
+                  <option value="30">⏱️ 30 segundos</option>
+                  <option value="60" selected>⏱️ 1 minuto</option>
+                  <option value="120">⏱️ 2 minutos</option>
+                  <option value="300">⏱️ 5 minutos</option>
+                </select>
+              </div>
+
+              <button class="btn btn-sm btn-primary" id="btnToggleAutoCapture" style="min-width: 140px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <span id="btnAutoCaptureIcon">▶</span> <span id="btnAutoCaptureText">Iniciar Auto</span>
+              </button>
+            </div>
+          </div>
+
           <!-- Filtros de multimedia -->
           <div class="multimedia-filter-bar" style="display: flex; gap: 8px; margin-top: 14px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px; overflow-x: auto;">
             <button class="filter-pill active" data-media="all" id="btnFilterMediaAll">📁 Todo el Historial</button>
@@ -1537,22 +1577,28 @@
       </div>
       <div class="modal-body">
         <div class="input-group">
-          <label for="inputNewDeviceName">Nombre del Dispositivo:</label>
-          <input type="text" id="inputNewDeviceName" placeholder="Ej: Redmi Note 12 de Mateo" class="text-input-field">
+          <label for="inputNewDeviceChildName">Nombre del Hijo o Hija:</label>
+          <input type="text" id="inputNewDeviceChildName" placeholder="Ej: Mateo, Sofía, Lucas..." class="text-input-field">
         </div>
         <div class="input-group">
-          <label for="inputNewDeviceChildName">Nombre del Menor:</label>
-          <input type="text" id="inputNewDeviceChildName" placeholder="Ej: Mateo" class="text-input-field">
-        </div>
-        <div class="input-group">
-          <label for="inputNewDeviceAvatar">Icono / Avatar:</label>
-          <select id="inputNewDeviceAvatar" class="device-select-custom" style="width: 100%;">
-            <option value="👦">👦 Niño</option>
-            <option value="👧">👧 Niña</option>
-            <option value="📱">📱 Teléfono</option>
-            <option value="🎮">🎮 Gamer</option>
-            <option value="👶">👶 Pequeño/a</option>
+          <label for="inputNewDeviceType">Tipo de Dispositivo:</label>
+          <select id="inputNewDeviceType" class="device-select-custom" style="width: 100%;">
+            <option value="celular" selected>📱 Celular / Smartphone</option>
+            <option value="tablet">📟 Tablet / Tableta</option>
           </select>
+        </div>
+        <div class="input-group">
+          <label for="inputNewDeviceAvatar">Icono / Avatar del Menor:</label>
+          <select id="inputNewDeviceAvatar" class="device-select-custom" style="width: 100%;">
+            <option value="👦" selected>👦 Niño</option>
+            <option value="👧">👧 Niña</option>
+            <option value="👶">👶 Pequeño/a</option>
+            <option value="🎮">🎮 Gamer</option>
+            <option value="🧒">🧒 Joven</option>
+          </select>
+        </div>
+        <div style="font-size: 0.78rem; color: #94a3b8; margin-top: 10px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 8px; padding: 10px 12px; line-height: 1.45;">
+          💡 <strong>Lectura automática:</strong> El nombre y modelo del dispositivo (ej: Samsung Galaxy, Xiaomi Redmi, Lenovo Tab) se leerá y registrará automáticamente cuando el teléfono o tablet se conecte por primera vez.
         </div>
       </div>
       <div class="modal-footer">
@@ -2069,9 +2115,68 @@
     </div>
   </div>
 
+  <!-- Modal: Editar Perfil de Hijo y Dispositivo -->
+  <div class="modal-backdrop" id="modalEditChildProfile">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">✏️ Modificar Perfil y Nombre</h3>
+          <p class="modal-note" style="margin-top: 4px;">Personaliza el nombre de tu hijo/a, el modelo del dispositivo y su avatar.</p>
+        </div>
+        <button class="modal-close" id="btnCloseEditChildModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editChildDeviceId">
+
+        <div class="input-group-custom" style="margin-bottom: 14px;">
+          <label for="inputEditChildName">Nombre del Hijo / Hija:</label>
+          <input type="text" id="inputEditChildName" placeholder="Ej: Seba, Sofía, Mateo...">
+        </div>
+
+        <div class="input-group-custom" style="margin-bottom: 14px;">
+          <label for="inputEditDeviceName">Nombre / Modelo del Dispositivo:</label>
+          <input type="text" id="inputEditDeviceName" placeholder="Ej: Samsung Galaxy A54, Tablet de Sofía...">
+        </div>
+
+        <div class="input-group-custom" style="margin-bottom: 14px;">
+          <label>Tipo de Dispositivo:</label>
+          <div style="display: flex; gap: 16px; margin-top: 6px;">
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #fff;">
+              <input type="radio" name="editDeviceTypeRadio" value="celular" id="editTypeCelular" checked>
+              <span>📱 Teléfono Celular</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #fff;">
+              <input type="radio" name="editDeviceTypeRadio" value="tablet" id="editTypeTablet">
+              <span>📟 Tablet</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="input-group-custom" style="margin-bottom: 18px;">
+          <label>Selecciona un Avatar:</label>
+          <div class="avatar-picker-grid" id="editChildAvatarPicker" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
+            <button type="button" class="avatar-option-btn active" data-avatar="👦">👦</button>
+            <button type="button" class="avatar-option-btn" data-avatar="👧">👧</button>
+            <button type="button" class="avatar-option-btn" data-avatar="🧒">🧒</button>
+            <button type="button" class="avatar-option-btn" data-avatar="👶">👶</button>
+            <button type="button" class="avatar-option-btn" data-avatar="📱">📱</button>
+            <button type="button" class="avatar-option-btn" data-avatar="📟">📟</button>
+            <button type="button" class="avatar-option-btn" data-avatar="🎮">🎮</button>
+            <button type="button" class="avatar-option-btn" data-avatar="⭐">⭐</button>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+          <button type="button" class="btn btn-secondary" id="btnCancelEditChild">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="btnSaveChildProfile">💾 Guardar Cambios</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="app.js?v=2.7"></script>
+  <script src="app.js?v=3.5"></script>
 </body>
 </html>
