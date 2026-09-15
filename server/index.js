@@ -1075,7 +1075,11 @@ app.post('/api/devices/:id/toggle-app', async (req, res) => {
     message: `${catalogItem ? catalogItem.name : pkg} fue ${isBlocked ? 'bloqueada' : 'desbloqueada'}`
   });
 
+  if (!device.pendingCommands) device.pendingCommands = [];
+  device.pendingCommands.push(isBlocked ? `BLOCK_APP:${pkg}` : `UNBLOCK_APP:${pkg}`);
+
   await db.saveDevice(device);
+  broadcast('COMMAND', { id: device.id, command: isBlocked ? `BLOCK_APP:${pkg}` : `UNBLOCK_APP:${pkg}` });
   broadcast('DEVICE_UPDATED', device);
   res.json({ success: true, device });
 });

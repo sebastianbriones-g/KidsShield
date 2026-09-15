@@ -44,7 +44,7 @@
   - **2. Configuración de Pago y Plan**: Tarjeta bancaria virtual interactiva, modal de actualización, conmutador de **Renovación Automática (Auto-Renew)**, cuota de dispositivos e historial de recibos con descarga PDF.
 - 📱 **Vinculación Rápida con Código QR Dinámico**: Generador de QR interactivo en modal emergente que despliega el código de emparejamiento familiar y dirección IP del servidor para sincronización instantánea con la cámara del menor.
 - 💎 **Gestión de Membresías y Estado Familiar**: Tarjeta lateral con visualización de nivel de suscripción (*Familia Total VIP 💎* / *Familiar Pro ⚡*) y ajuste reactivo del cupo de dispositivos permitidos.
-- 🔒 **Bloqueo Infranqueable Multi-Capa en Android**: Protección total contra evasión. Se bloquean los launchers de sistema (OneUI, Pixel, MIUI), se desactiva el botón Atrás y "Go Home", impidiendo que el menor continúe usando el móvil durante el bloqueo.
+- 🔒 **Bloqueo Inteligente de Aplicaciones y Dispositivo Unificado**: Control remoto inmediato de aplicaciones individuales o bloqueo total del dispositivo. Al bloquear el dispositivo, el menor puede acceder a su pantalla de inicio pero se impide la apertura de cualquier aplicación detectada, cerrándola al instante con expulsión al inicio y pantalla de aviso contextual con PIN parental de rescate.
 - 👁️ **Visualización en Vivo sin Obstrucción**: El panel de padres permite observar la pantalla del menor en tiempo real incluso cuando el teléfono se encuentra bloqueado (remoción de la capa opaca "Teléfono Pausado").
 - 📍 **Geocercas Seguras con Selección en Mapa**: Marcación con un clic en el mapa satelital para capturar coordenadas al vuelo, validación con feedback visual de campos faltantes (borde rojo), cierre automático del modal al guardar y eliminación definitiva persistente.
 - 📸 **Captura Automática Periódica en Multimedia**: Supervisión periódica programada (fotos, clips de vídeo de 5s, grabaciones de audio ambiental de 5s o secuencia mixta) con intervalos de 30s a 5min y temporizador en vivo.
@@ -199,19 +199,33 @@ El área de Multimedia (`parent-dashboard/`) cuenta con automatización continua
 
 ---
 
-## 🛡️ Bloqueo Infranqueable en la App Android
+## 🛡️ Bloqueo Inteligente de Aplicaciones y Dispositivo Unificado
 
-El módulo Android (`child-android-app/`) implementa una política estricta y resiliente de bloqueo:
+El módulo Android (`child-android-app/`) implementa un sistema unificado y robusto para el bloqueo de aplicaciones individuales y el bloqueo general del dispositivo:
 
-1. **Supresión de Evasión por Launchers Nativos**:
-   - `AppBlockerAccessibilityService`: Cuando el estado `isDeviceLocked` está activo, se bloquean activamente todos los launchers del sistema (Samsung OneUI, Pixel Launcher, Xiaomi MIUI, Nova, etc.). Ninguna aplicación de terceros está permitida salvo llamadas de emergencia o la propia interfaz de KidsShield.
-   - Se eliminó la inyección de `GLOBAL_ACTION_HOME` durante el bloqueo para evitar que el menor vuelva a la pantalla de inicio del teléfono.
-2. **Blindaje de la Pantalla de Bloqueo (`LockOverlayActivity`)**:
-   - Se deshabilitó el botón físico/gesto de retroceso (`onBackPressed`) mientras el dispositivo esté bloqueado.
-   - Se retiró el botón "Volver al inicio" durante el bloqueo total.
-   - Mediante `onWindowFocusChanged()`, si alguna aplicación o notificación intenta superponerse o ganar foco, la pantalla de bloqueo de KidsShield se reposiciona inmediatamente al frente.
-3. **Vigilancia Cíclica en Segundo Plano**:
-   - `UsageMonitorService` ejecuta un ciclo de validación periódica cada 6 segundos; si detecta que el estado es bloqueado pero la actividad no está al frente, la invoca forzosamente de inmediato.
+1. **Bloqueo Remoto de Aplicaciones Individuales**:
+   - Desde la pestaña de Dispositivos en el panel de padres, el tutor puede bloquear o desbloquear cualquier aplicación detectada (por ejemplo: YouTube, TikTok, juegos o redes sociales).
+   - El servidor transmite la orden de inmediato por WebSockets (`COMMAND` con `BLOCK_APP:<pkg>` o `UNBLOCK_APP:<pkg>`) y actualiza la lista sincronizada de aplicaciones bloqueadas.
+   - `AppBlockerAccessibilityService`: En cuanto el menor pulsa el icono de la aplicación restringida, el servicio detecta el paquete en primer plano, ejecuta instantáneamente `GLOBAL_ACTION_HOME` para cerrar la aplicación y levanta la pantalla `LockOverlayActivity` indicando el nombre de la app y la razón de bloqueo.
+
+2. **Bloqueo Completo del Dispositivo (Modo Universal "Todas las Apps Detectadas")**:
+   - Al activar el bloqueo remoto del dispositivo desde el panel de padres (`isDeviceLocked = true`), el sistema funciona con la misma mecánica que el bloqueo de aplicaciones individuales, pero extendido a **todas las aplicaciones detectadas** en el teléfono del menor.
+   - El menor puede visualizar su pantalla de inicio (launcher de Android) e interactuar con el sistema sin congelamientos ni pantallas negras forzadas.
+   - Tan pronto el menor intenta abrir **cualquier aplicación** (juegos, navegador, redes sociales, etc.), el servicio de accesibilidad lo detecta al instante, lo expulsa de inmediato al inicio (`GLOBAL_ACTION_HOME`) y muestra la pantalla `LockOverlayActivity` con el aviso *"🔒 Dispositivo Bloqueado"* y la indicación de la app que se intentó iniciar.
+   - El botón **"Volver al inicio"** permanece accesible para que el menor retorne limpiamente al escritorio.
+
+3. **Excepciones de Seguridad y Emergencia Garantizadas**:
+   - Por seguridad vital, el sistema de bloqueo permite siempre el acceso a:
+     - Teléfono y llamadas de emergencia (`com.android.phone`, marcador telefónico del sistema).
+     - Componentes del sistema operativo e interfaz de usuario (`com.android.systemui`).
+     - Lanzador de aplicaciones principal (Home launcher dinámico).
+     - La propia aplicación de KidsShield para sincronización y configuración parental.
+   - Protege activamente la pantalla de Ajustes del sistema (`com.android.settings`) para impedir que se apague el GPS, se desinstale la app o se revoquen los permisos.
+
+4. **Persistencia y Resiliencia en Segundo Plano**:
+   - `ParentalConfig`: Persistencia dual en `SharedPreferences` (Set de Strings y cadena CSV sanitizada en minúsculas) garantizando que las listas de apps restringidas no se pierdan entre reinicios o actualizaciones.
+   - Estado de protección activo por defecto (`protection_active = true`), evitando que servicios en segundo plano desactiven las reglas de bloqueo.
+   - Desbloqueo de emergencia mediante **PIN Parental**: El padre o tutor puede ingresar el PIN en la pantalla de bloqueo del menor para obtener 15 minutos de uso libre o desbloquear permanentemente.
 
 ---
 

@@ -36,6 +36,7 @@ public class LockOverlayActivity extends AppCompatActivity {
         currentInstance = new java.lang.ref.WeakReference<>(this);
         setContentView(R.layout.activity_lock_overlay);
 
+        TextView textLockTitle = findViewById(R.id.textLockTitle);
         textLockMessage = findViewById(R.id.textLockMessage);
         inputParentPin = findViewById(R.id.inputParentPin);
         Button btnUnlockWithPin = findViewById(R.id.btnUnlockWithPin);
@@ -49,16 +50,24 @@ public class LockOverlayActivity extends AppCompatActivity {
         if (reason == null || reason.isEmpty()) {
             reason = config.getLockReason();
         }
-        if (reason != null && !reason.isEmpty()) {
-            textLockMessage.setText(reason);
+
+        String appName = getIntent().getStringExtra("BLOCKED_APP_NAME");
+        boolean isDevLocked = config.isDeviceLocked();
+
+        if (textLockTitle != null) {
+            textLockTitle.setText(isDevLocked ? "🔒 Dispositivo Bloqueado" : "🔒 Aplicación Bloqueada");
         }
 
-        // Si el teléfono está bloqueado totalmente por los padres, ocultar salida al escritorio
-        if (config.isDeviceLocked()) {
-            btnGoHome.setVisibility(View.GONE);
-        } else {
-            btnGoHome.setVisibility(View.VISIBLE);
+        if (textLockMessage != null) {
+            if (isDevLocked && appName != null && !appName.isEmpty()) {
+                textLockMessage.setText(reason + "\n\nNo es posible abrir " + appName + " mientras el teléfono esté bloqueado.");
+            } else if (reason != null && !reason.isEmpty()) {
+                textLockMessage.setText(reason);
+            }
         }
+
+        // El botón para volver al escritorio siempre está disponible para regresar a la pantalla de inicio
+        btnGoHome.setVisibility(View.VISIBLE);
 
         btnUnlockWithPin.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -70,18 +79,17 @@ public class LockOverlayActivity extends AppCompatActivity {
         btnGoHome.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                ParentalConfig cfg = ParentalConfig.getInstance(LockOverlayActivity.this);
-                if (cfg.isDeviceLocked()) {
-                    Toast.makeText(LockOverlayActivity.this, "El teléfono se encuentra bloqueado por tus padres.", Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                Intent homeIntent = new Intent(Intent.ACTION_MAIN);
-                homeIntent.addCategory(Intent.CATEGORY_HOME);
-                homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(homeIntent);
-                finish();
+                goHome();
             }
         });
+    }
+
+    private void goHome() {
+        Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+        homeIntent.addCategory(Intent.CATEGORY_HOME);
+        homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(homeIntent);
+        finish();
     }
 
     private void verifyAndUnlock() {
@@ -89,9 +97,11 @@ public class LockOverlayActivity extends AppCompatActivity {
         ParentalConfig config = ParentalConfig.getInstance(this);
 
         if (enteredPin.equals(config.getParentPin())) {
-            Toast.makeText(this, "✅ Acceso concedido (10 min de configuración)", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "✅ Acceso parental concedido (15 min de desbloqueo)", Toast.LENGTH_SHORT).show();
             config.setDeviceLocked(false);
-            config.grantAdminBypass(10);
+            config.grantAdminBypass(15);
+            com.kidsguard.parentalcontrol.network.SyncClient.sendEvent(this, "PARENT_PIN_UNLOCK", getPackageName(), "KidsShield",
+                    "🔓 Dispositivo desbloqueado mediante PIN parental.");
             finish();
         } else {
             Toast.makeText(this, "PIN incorrecto. Intenta de nuevo.", Toast.LENGTH_SHORT).show();
@@ -99,33 +109,9 @@ public class LockOverlayActivity extends AppCompatActivity {
         }
     }
 
-    // Prevent bypassing via back button when locked
     @Override
     public void onBackPressed() {
-        ParentalConfig config = ParentalConfig.getInstance(this);
-        if (config.isDeviceLocked()) {
-            Toast.makeText(this, "El teléfono se encuentra bloqueado por tus padres.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        Intent homeIntent = new Intent(Intent.ACTION_MAIN);
-        homeIntent.addCategory(Intent.CATEGORY_HOME);
-        homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(homeIntent);
-    }
-
-    @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
-        if (!hasFocus) {
-            ParentalConfig config = ParentalConfig.getInstance(this);
-            if (config.isDeviceLocked()) {
-                // Reenforzar primer plano para evitar que otras aplicaciones o launchers se abran encima
-                Intent lockIntent = new Intent(this, LockOverlayActivity.class);
-                lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                lockIntent.putExtra("BLOCK_REASON", config.getLockReason());
-                startActivity(lockIntent);
-            }
-        }
+        goHome();
     }
 
     @Override

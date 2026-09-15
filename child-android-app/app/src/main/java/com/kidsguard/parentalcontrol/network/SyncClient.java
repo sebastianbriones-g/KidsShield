@@ -1,6 +1,7 @@
 package com.kidsguard.parentalcontrol.network;
 
 import android.content.Context;
+import android.content.Intent;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -125,25 +126,26 @@ public class SyncClient {
                             return;
                         }
 
+                        config.setProtectionActive(true);
+
                         // Update local policies based on parent server instructions
                         if (resJson.has("lockReason")) {
                             config.setLockReason(resJson.getString("lockReason"));
                         }
                         if (resJson.has("isLocked")) {
                             boolean locked = resJson.getBoolean("isLocked");
+                            boolean wasLocked = config.isDeviceLocked();
                             config.setDeviceLocked(locked);
                             if (!locked) {
                                 com.kidsguard.parentalcontrol.ui.LockOverlayActivity.dismissIfOpen();
-                            } else {
+                            } else if (!wasLocked) {
                                 String reason = resJson.optString("lockReason", config.getLockReason());
                                 if (reason == null || reason.isEmpty()) reason = "Dispositivo bloqueado por control parental.";
                                 config.setLockReason(reason);
-                                Intent lockIntent = new Intent(context, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
-                                lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                                lockIntent.putExtra("reason", reason);
-                                lockIntent.putExtra("BLOCK_REASON", reason);
-                                lockIntent.putExtra("IS_DEVICE_LOCKED", true);
-                                context.startActivity(lockIntent);
+                                AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
+                                if (a11y != null) {
+                                    a11y.kickCurrentAppIfLocked(reason);
+                                }
                             }
                         }
                         if (resJson.has("dailyLimitMinutes")) {
@@ -184,11 +186,22 @@ public class SyncClient {
                                     config.setDeviceLocked(true);
                                     String reason = config.getLockReason();
                                     if (reason == null || reason.isEmpty()) reason = "Dispositivo bloqueado por control parental.";
-                                    Intent lockIntent = new Intent(context, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
-                                    lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                                    lockIntent.putExtra("BLOCK_REASON", reason);
-                                    lockIntent.putExtra("IS_DEVICE_LOCKED", true);
-                                    context.startActivity(lockIntent);
+                                    AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
+                                    if (a11y != null) {
+                                        a11y.kickCurrentAppIfLocked(reason);
+                                    }
+                                } else if (cmd.startsWith("BLOCK_APP:")) {
+                                    String pkg = cmd.substring("BLOCK_APP:".length()).trim();
+                                    Set<String> blocked = config.getBlockedApps();
+                                    blocked.add(pkg);
+                                    config.setBlockedApps(blocked);
+                                    Log.i(TAG, "Comando recibido: BLOCK_APP -> " + pkg);
+                                } else if (cmd.startsWith("UNBLOCK_APP:")) {
+                                    String pkg = cmd.substring("UNBLOCK_APP:".length()).trim();
+                                    Set<String> blocked = config.getBlockedApps();
+                                    blocked.remove(pkg.toLowerCase(java.util.Locale.ROOT));
+                                    config.setBlockedApps(blocked);
+                                    Log.i(TAG, "Comando recibido: UNBLOCK_APP -> " + pkg);
                                 } else if ("TAKE_SCREENSHOT".equalsIgnoreCase(cmd)) {
                                     Log.i(TAG, "Comando recibido: TAKE_SCREENSHOT");
                                     AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();

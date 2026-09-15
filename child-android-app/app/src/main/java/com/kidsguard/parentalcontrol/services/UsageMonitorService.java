@@ -235,30 +235,22 @@ public class UsageMonitorService extends Service {
         boolean dailyLimitReached = (config.getDailyLimitMinutes() > 0 && totalScreenTimeMinutes >= config.getDailyLimitMinutes());
         boolean inBedtime = config.isCurrentTimeInBedtime();
 
-        if (config.isDeviceLocked()) {
-            Intent lockIntent = new Intent(this, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
-            lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            String reason = config.getLockReason();
-            if (reason == null || reason.isEmpty()) reason = "Dispositivo bloqueado por control parental.";
-            lockIntent.putExtra("BLOCK_REASON", reason);
-            lockIntent.putExtra("IS_DEVICE_LOCKED", true);
-            startActivity(lockIntent);
-        } else if (dailyLimitReached) {
+        if (dailyLimitReached && !config.isDeviceLocked()) {
             config.setDeviceLocked(true);
-            config.setLockReason("Límite diario de tiempo de pantalla alcanzado (" + config.getDailyLimitMinutes() + " min).");
-            Intent lockIntent = new Intent(this, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
-            lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            lockIntent.putExtra("BLOCK_REASON", "Límite diario de tiempo de pantalla alcanzado (" + config.getDailyLimitMinutes() + " min).");
-            lockIntent.putExtra("IS_DEVICE_LOCKED", true);
-            startActivity(lockIntent);
-        } else if (inBedtime) {
+            String r = "Límite diario de tiempo de pantalla alcanzado (" + config.getDailyLimitMinutes() + " min).";
+            config.setLockReason(r);
+            AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
+            if (a11y != null) {
+                a11y.kickCurrentAppIfLocked(r);
+            }
+        } else if (inBedtime && !config.isDeviceLocked()) {
             config.setDeviceLocked(true);
-            config.setLockReason("Modo descanso / Horario nocturno activo (" + config.getBedtimeStart() + " - " + config.getBedtimeEnd() + ").");
-            Intent lockIntent = new Intent(this, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
-            lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            lockIntent.putExtra("BLOCK_REASON", "Horario nocturno activo (" + config.getBedtimeStart() + " - " + config.getBedtimeEnd() + ")");
-            lockIntent.putExtra("IS_DEVICE_LOCKED", true);
-            startActivity(lockIntent);
+            String r = "Modo descanso / Horario nocturno activo (" + config.getBedtimeStart() + " - " + config.getBedtimeEnd() + ").";
+            config.setLockReason(r);
+            AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
+            if (a11y != null) {
+                a11y.kickCurrentAppIfLocked(r);
+            }
         }
 
         // Supervisión activa de GPS permanente
@@ -359,13 +351,35 @@ public class UsageMonitorService extends Service {
         return (int) (((float) level / (float) scale) * 100.0f);
     }
 
-    private long getStartOfDayMillis() {
+    public static long getStartOfDayMillis() {
         Calendar cal = Calendar.getInstance();
         cal.set(Calendar.HOUR_OF_DAY, 0);
         cal.set(Calendar.MINUTE, 0);
         cal.set(Calendar.SECOND, 0);
         cal.set(Calendar.MILLISECOND, 0);
         return cal.getTimeInMillis();
+    }
+
+    public static int getTodayScreenTimeMinutes(Context context) {
+        try {
+            UsageStatsManager usm = (UsageStatsManager) context.getSystemService(Context.USAGE_STATS_SERVICE);
+            if (usm == null) return 0;
+            long startTime = getStartOfDayMillis();
+            long endTime = System.currentTimeMillis();
+            List<UsageStats> stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, endTime);
+            int total = 0;
+            if (stats != null) {
+                for (UsageStats u : stats) {
+                    long time = u.getTotalTimeInForeground();
+                    if (time > 0) {
+                        total += (int) (time / (1000 * 60));
+                    }
+                }
+            }
+            return total;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     @Override

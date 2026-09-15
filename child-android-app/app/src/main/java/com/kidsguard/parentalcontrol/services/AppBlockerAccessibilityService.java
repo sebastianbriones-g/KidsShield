@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.ColorSpace;
 import android.hardware.HardwareBuffer;
@@ -38,18 +39,64 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
     private long lastScreenshotTime = 0;
     private boolean isRecordingVideoClip = false;
 
-    // Packages to never block (system launcher, dialer for emergency, our own app)
-    private static final Set<String> SYSTEM_WHITELIST = new HashSet<>(Arrays.asList(
-            "com.kidsguard.parentalcontrol",
-            "com.android.systemui",
-            "com.google.android.dialer",
-            "com.android.dialer",
-            "com.samsung.android.dialer",
-            "com.sec.android.app.launcher",
-            "com.google.android.apps.nexuslauncher",
-            "com.mi.android.globallauncher",
-            "com.miui.home"
-    ));
+    public boolean isEmergencyPackage(String packageName) {
+        if (packageName == null) return false;
+        String lower = packageName.toLowerCase();
+        return lower.contains("dialer")
+                || lower.contains("telecom")
+                || lower.contains("emergency")
+                || "com.android.phone".equals(lower)
+                || "com.samsung.android.incallui".equals(lower)
+                || "com.google.android.dialer".equals(lower);
+    }
+
+    public boolean isLauncherPackage(String packageName) {
+        if (packageName == null) return false;
+        String lower = packageName.toLowerCase();
+        if (lower.contains("launcher") || lower.contains("home") || lower.contains("trebuchet")) {
+            return true;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_MAIN);
+            intent.addCategory(Intent.CATEGORY_HOME);
+            ResolveInfo resolveInfo = getPackageManager().resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
+            if (resolveInfo != null && resolveInfo.activityInfo != null) {
+                if (packageName.equalsIgnoreCase(resolveInfo.activityInfo.packageName)) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    public void kickCurrentAppIfLocked(String reason) {
+        if (currentActivePackage == null || currentActivePackage.isEmpty()) return;
+        if (isEmergencyPackage(currentActivePackage)
+                || isLauncherPackage(currentActivePackage)
+                || getPackageName().equals(currentActivePackage)
+                || "com.android.systemui".equals(currentActivePackage)) {
+            return;
+        }
+
+        Log.i(TAG, "Expulsando app activa al inicio por bloqueo: " + currentActivePackage);
+        performGlobalAction(GLOBAL_ACTION_HOME);
+
+        PackageManager pm = getPackageManager();
+        String appName = currentActivePackage;
+        try {
+            ApplicationInfo ai = pm.getApplicationInfo(currentActivePackage, 0);
+            appName = pm.getApplicationLabel(ai).toString();
+        } catch (Exception ignored) {}
+
+        Intent lockIntent = new Intent(this, LockOverlayActivity.class);
+        lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        String lockReason = (reason != null && !reason.isEmpty()) ? reason : "El dispositivo se encuentra bloqueado por tus padres.";
+        lockIntent.putExtra("BLOCK_REASON", lockReason);
+        lockIntent.putExtra("BLOCKED_PACKAGE", currentActivePackage);
+        lockIntent.putExtra("BLOCKED_APP_NAME", appName);
+        lockIntent.putExtra("IS_DEVICE_LOCKED", true);
+        startActivity(lockIntent);
+    }
 
     public static AppBlockerAccessibilityService getInstance() {
         return instanceRef != null ? instanceRef.get() : null;
@@ -88,7 +135,7 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
                     || (packageName.contains("settings") && !packageName.contains("kidsshield"));
 
             if (isPackageManagement) {
-                // Si la protección no está activada o el padre está en ventana de bypass/configuración, permitir libre acceso
+                // Si el padre está en ventana de bypass (PIN introducido), permitir libre acceso
                 if (!config.isProtectionEnforced()) {
                     return;
                 }
@@ -123,6 +170,7 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
                     lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                     lockIntent.putExtra("BLOCK_REASON", "El GPS debe permanecer encendido en todo momento por seguridad familiar.");
                     lockIntent.putExtra("BLOCKED_PACKAGE", packageName);
+                    lockIntent.putExtra("BLOCKED_APP_NAME", "Ajustes de Ubicación");
                     startActivity(lockIntent);
                     return;
                 }
@@ -137,32 +185,22 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
                     lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                     lockIntent.putExtra("BLOCK_REASON", "Para desinstalar o modificar KidsShield, se requiere el PIN de los padres en la app.");
                     lockIntent.putExtra("BLOCKED_PACKAGE", packageName);
+                    lockIntent.putExtra("BLOCKED_APP_NAME", "Administrador de Dispositivo");
                     startActivity(lockIntent);
                     return;
                 }
                 return;
             }
 
-            // Si el dispositivo está bloqueado por el padre, NO permitir launchers ni otras apps (solo teléfono de emergencia o nuestra propia app)
-            boolean isEmergencyDialer = packageName.contains("dialer") || packageName.contains("telecom") || "com.android.phone".equals(packageName);
-            boolean isOurApp = "com.kidsguard.parentalcontrol".equals(packageName);
+            // Excluir paquetes vitales para el funcionamiento del teléfono:
+            // Nuestra propia app, UI del sistema, teléfono de emergencias y el launcher de escritorio
+            boolean isOurApp = getPackageName().equals(packageName);
             boolean isSystemUi = "com.android.systemui".equals(packageName);
+            boolean isEmergency = isEmergencyPackage(packageName);
+            boolean isLauncher = isLauncherPackage(packageName);
 
-            if (config.isDeviceLocked()) {
-                if (!isEmergencyDialer && !isOurApp && !isSystemUi) {
-                    Log.w(TAG, "Dispositivo bloqueado: Interceptando intento de abrir o usar " + packageName);
-                    Intent lockIntent = new Intent(this, LockOverlayActivity.class);
-                    lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                    lockIntent.putExtra("BLOCK_REASON", config.getLockReason());
-                    lockIntent.putExtra("IS_DEVICE_LOCKED", true);
-                    lockIntent.putExtra("BLOCKED_PACKAGE", packageName);
-                    startActivity(lockIntent);
-                    return;
-                }
-            } else {
-                if (SYSTEM_WHITELIST.contains(packageName)) {
-                    return;
-                }
+            if (isOurApp || isSystemUi || isEmergency || isLauncher) {
+                return;
             }
 
             PackageManager pm = getPackageManager();
@@ -173,15 +211,15 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
             } catch (Exception ignored) {
             }
 
-            // Real-time Event: User switched to a new application
+            // Registrar app activa en tiempo real
             if (!packageName.equals(currentActivePackage)) {
                 currentActivePackage = packageName;
                 Log.i(TAG, "App activa detectada: " + appName + " (" + packageName + ")");
                 SyncClient.sendEvent(this, "app_open", packageName, appName, "Abrió " + appName);
             }
 
-            // Si la protección parental no está activa o el dispositivo está desvinculado, permitir uso libre
-            if (!config.isProtectionActive() || !config.isProtectionEnforced()) {
+            // Si el padre está en ventana de bypass por PIN, permitir uso temporal
+            if (!config.isProtectionEnforced()) {
                 return;
             }
 
@@ -189,20 +227,34 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
             String blockReason = "";
             String eventTypeToReport = "";
 
+            // 1. Cuando el DISPOSITIVO ESTÁ BLOQUEADO por los padres:
+            // Funciona exactamente igual que el bloqueo de aplicación, pero aplicado a TODAS las aplicaciones detectadas.
             if (config.isDeviceLocked()) {
                 shouldBlock = true;
-                blockReason = config.getLockReason();
-                eventTypeToReport = "app_blocked_attempt";
-            } else if (config.isCurrentTimeInBedtime()) {
+                String r = config.getLockReason();
+                blockReason = (r != null && !r.isEmpty()) ? r : "El dispositivo se encuentra bloqueado por tus padres.";
+                eventTypeToReport = "device_locked_app_attempt";
+            }
+            // 2. Horario nocturno (Bedtime)
+            else if (config.isCurrentTimeInBedtime()) {
                 shouldBlock = true;
-                blockReason = "Modo descanso activo (" + config.getBedtimeStart() + " a " + config.getBedtimeEnd() + ").";
-                eventTypeToReport = "app_blocked_attempt";
-            } else if (config.isAppBlocked(packageName)) {
+                blockReason = "Modo descanso / Horario nocturno activo (" + config.getBedtimeStart() + " - " + config.getBedtimeEnd() + ").";
+                eventTypeToReport = "bedtime_app_attempt";
+            }
+            // 3. Límite diario total de pantalla
+            else if (config.getDailyLimitMinutes() > 0 && UsageMonitorService.getTodayScreenTimeMinutes(this) >= config.getDailyLimitMinutes()) {
                 shouldBlock = true;
-                blockReason = "Esta aplicación ha sido bloqueada por tus padres.";
+                blockReason = "Has alcanzado el límite diario de pantalla de " + config.getDailyLimitMinutes() + " minutos.";
+                eventTypeToReport = "daily_limit_app_attempt";
+            }
+            // 4. Bloqueo de APLICACIÓN ESPECÍFICA (seleccionada por los padres en el panel)
+            else if (config.isAppBlocked(packageName)) {
+                shouldBlock = true;
+                blockReason = "Esta aplicación (" + appName + ") ha sido bloqueada por tus padres.";
                 eventTypeToReport = "app_blocked_attempt";
-            } else {
-                // Check individual app time limit
+            }
+            // 5. Límite individual de tiempo para esta aplicación
+            else {
                 int limitMins = config.getAppLimitMinutes(packageName);
                 if (limitMins > 0) {
                     int usedMins = UsageMonitorService.getTodayUsageMinutes(this, packageName);
@@ -216,30 +268,29 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
 
             if (shouldBlock) {
                 long now = System.currentTimeMillis();
-                // Prevent duplicate launches within 800ms
-                if (packageName.equals(lastBlockedPackage) && (now - lastBlockTimestamp < 800)) {
+                // Evitar ejecuciones duplicadas dentro de 600ms
+                if (packageName.equals(lastBlockedPackage) && (now - lastBlockTimestamp < 600)) {
                     return;
                 }
                 lastBlockedPackage = packageName;
                 lastBlockTimestamp = now;
 
-                Log.i(TAG, "Bloqueando aplicación: " + packageName + " Razón: " + blockReason);
+                Log.i(TAG, "🚫 [BLOQUEO ACTIVADO] Interceptando " + appName + " (" + packageName + "). Razón: " + blockReason);
 
-                // Report block event to server
+                // Expulsar inmediatamente al inicio (Home) para que la app no se ejecute
+                performGlobalAction(GLOBAL_ACTION_HOME);
+
+                // Reportar evento al servidor de padres
                 if (!eventTypeToReport.isEmpty()) {
                     SyncClient.sendEvent(this, eventTypeToReport, packageName, appName, blockReason);
                 }
 
-                // Si es bloqueo de una app específica, enviar a home antes del overlay; si es bloqueo total de dispositivo, no ir a home
-                if (!config.isDeviceLocked()) {
-                    performGlobalAction(GLOBAL_ACTION_HOME);
-                }
-
-                // Launch Fullscreen Lock Activity
+                // Desplegar pantalla de bloqueo
                 Intent lockIntent = new Intent(this, LockOverlayActivity.class);
                 lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 lockIntent.putExtra("BLOCK_REASON", blockReason);
                 lockIntent.putExtra("BLOCKED_PACKAGE", packageName);
+                lockIntent.putExtra("BLOCKED_APP_NAME", appName);
                 lockIntent.putExtra("IS_DEVICE_LOCKED", config.isDeviceLocked());
                 startActivity(lockIntent);
             }

@@ -60,7 +60,7 @@ public class ParentalConfig {
     }
 
     public boolean isProtectionActive() {
-        return prefs.getBoolean("protection_active", false);
+        return prefs.getBoolean("protection_active", true);
     }
 
     public void setProtectionActive(boolean active) {
@@ -81,7 +81,10 @@ public class ParentalConfig {
 
     public boolean isProtectionEnforced() {
         if (!isProtectionActive()) return false;
-        if (System.currentTimeMillis() < getAdminBypassUntil()) return false;
+        long bypassUntil = getAdminBypassUntil();
+        if (bypassUntil > 0 && System.currentTimeMillis() < bypassUntil) {
+            return false;
+        }
         return true;
     }
 
@@ -126,17 +129,56 @@ public class ParentalConfig {
     }
 
     public Set<String> getBlockedApps() {
-        return prefs.getStringSet("blocked_apps", new HashSet<String>());
+        Set<String> set = prefs.getStringSet("blocked_apps", null);
+        Set<String> result = new HashSet<>();
+        if (set != null) {
+            for (String s : set) {
+                if (s != null && !s.trim().isEmpty()) {
+                    result.add(s.trim().toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+        String csv = prefs.getString("blocked_apps_csv", "");
+        if (!csv.isEmpty()) {
+            String[] parts = csv.split(",");
+            for (String p : parts) {
+                if (p != null && !p.trim().isEmpty()) {
+                    result.add(p.trim().toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+        return result;
     }
 
     public void setBlockedApps(Set<String> apps) {
-        prefs.edit().putStringSet("blocked_apps", new HashSet<>(apps)).apply();
+        Set<String> cleanSet = new HashSet<>();
+        StringBuilder sb = new StringBuilder();
+        if (apps != null) {
+            for (String s : apps) {
+                if (s != null && !s.trim().isEmpty()) {
+                    String clean = s.trim().toLowerCase(Locale.ROOT);
+                    cleanSet.add(clean);
+                    if (sb.length() > 0) sb.append(",");
+                    sb.append(clean);
+                }
+            }
+        }
+        prefs.edit()
+            .putStringSet("blocked_apps", cleanSet)
+            .putString("blocked_apps_csv", sb.toString())
+            .apply();
+        android.util.Log.i("KidsShield_Config", "Lista de apps bloqueadas actualizada (" + cleanSet.size() + "): " + sb.toString());
     }
 
     public boolean isAppBlocked(String packageName) {
-        if (packageName == null) return false;
+        if (packageName == null || packageName.trim().isEmpty()) return false;
+        String clean = packageName.trim().toLowerCase(Locale.ROOT);
         Set<String> blocked = getBlockedApps();
-        return blocked.contains(packageName);
+        boolean isBlocked = blocked.contains(clean);
+        if (isBlocked) {
+            android.util.Log.i("KidsShield_Config", "App " + packageName + " detectada como BLOQUEADA");
+        }
+        return isBlocked;
     }
 
     public String getAppLimitsJson() {
@@ -204,8 +246,9 @@ public class ParentalConfig {
             .putInt("daily_limit_minutes", 1440)
             .putBoolean("bedtime_enabled", false)
             .putStringSet("blocked_apps", new HashSet<String>())
+            .putString("blocked_apps_csv", "")
             .putString("app_limits", "{}")
-            .putLong("admin_bypass_until", System.currentTimeMillis() + 86400000L)
+            .putLong("admin_bypass_until", 0L)
             .apply();
     }
 }
