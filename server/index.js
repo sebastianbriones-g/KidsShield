@@ -1001,15 +1001,43 @@ app.post('/api/devices/:id/config', async (req, res) => {
 
   if (typeof isLocked === 'boolean') {
     device.isLocked = isLocked;
-    if (lockReason) device.lockReason = lockReason;
+    if (isLocked) {
+      if (lockReason) device.lockReason = lockReason;
+    } else {
+      device.lockReason = '';
+      // Si se da a desbloquear y no tiene tiempo (o el tiempo se agotó),
+      // otorgamos automáticamente +15 minutos para permitir que el menor utilice el móvil
+      if (typeof dailyLimitMinutes !== 'number' && (device.screenTimeTodayMinutes || 0) >= (device.dailyLimitMinutes || 120)) {
+        device.dailyLimitMinutes = Math.max((device.dailyLimitMinutes || 120) + 15, (device.screenTimeTodayMinutes || 0) + 15);
+      }
+    }
+    if (!device.pendingCommands) device.pendingCommands = [];
+    device.pendingCommands.push(isLocked ? 'LOCK_DEVICE' : 'UNLOCK_DEVICE');
     device.activityLog.unshift({
       time: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
       type: isLocked ? 'lock' : 'unlock',
-      message: isLocked ? `Dispositivo bloqueado remotamente: "${device.lockReason}"` : 'Dispositivo desbloqueado por los padres'
+      message: isLocked ? `Dispositivo bloqueado remotamente: "${device.lockReason || 'Bloqueo parental'}"` : 'Dispositivo desbloqueado por los padres'
     });
+    broadcast('COMMAND', { id: device.id, command: isLocked ? 'LOCK_DEVICE' : 'UNLOCK_DEVICE', isLocked });
+    broadcast('LOCK_STATE_CHANGED', { id: device.id, isLocked });
   }
 
-  if (typeof dailyLimitMinutes === 'number') device.dailyLimitMinutes = dailyLimitMinutes;
+  if (typeof dailyLimitMinutes === 'number') {
+    device.dailyLimitMinutes = dailyLimitMinutes;
+    // Si el teléfono estaba bloqueado y ahora hay tiempo disponible (o sin límite), desbloquear automáticamente
+    if (device.isLocked && (device.screenTimeTodayMinutes < device.dailyLimitMinutes || device.dailyLimitMinutes === 0)) {
+      device.isLocked = false;
+      device.lockReason = '';
+      if (!device.pendingCommands) device.pendingCommands = [];
+      device.pendingCommands.push('UNLOCK_DEVICE');
+      const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      const unlockMsg = `🔓 Límite de tiempo ampliado a ${device.dailyLimitMinutes} min. Dispositivo desbloqueado automáticamente.`;
+      device.activityLog.unshift({ time: timeStr, type: 'unlock', message: unlockMsg });
+      db.logActivity(device.id, timeStr, 'unlock', unlockMsg, device.familyId || 'FAM-DEFAULT-01').catch(() => {});
+      broadcast('COMMAND', { id: device.id, command: 'UNLOCK_DEVICE', isLocked: false });
+      broadcast('LOCK_STATE_CHANGED', { id: device.id, isLocked: false });
+    }
+  }
   if (typeof bedtimeEnabled === 'boolean') device.bedtimeEnabled = bedtimeEnabled;
   if (bedtimeStart) device.bedtimeStart = bedtimeStart;
   if (bedtimeEnd) device.bedtimeEnd = bedtimeEnd;
@@ -1018,6 +1046,8 @@ app.post('/api/devices/:id/config', async (req, res) => {
   if (typeof req.body.autoScreenshotEnabled === 'boolean') device.autoScreenshotEnabled = req.body.autoScreenshotEnabled;
   if (typeof req.body.gpsTrackingEnabled === 'boolean') device.gpsTrackingEnabled = req.body.gpsTrackingEnabled;
   if (typeof req.body.gpsIntervalSeconds === 'number') device.gpsIntervalSeconds = req.body.gpsIntervalSeconds;
+  if (typeof req.body.audioClipDurationSeconds === 'number') device.audioClipDurationSeconds = req.body.audioClipDurationSeconds;
+  if (typeof req.body.videoClipDurationSeconds === 'number') device.videoClipDurationSeconds = req.body.videoClipDurationSeconds;
 
   if (Array.isArray(blockedApps)) {
     device.blockedApps = blockedApps;
@@ -1092,6 +1122,12 @@ app.post('/api/devices/:id/toggle-lock', async (req, res) => {
   const isLocked = typeof req.body.isLocked === 'boolean' ? req.body.isLocked : !device.isLocked;
   device.isLocked = isLocked;
   device.lockReason = isLocked ? (req.body.lockReason || 'Bloqueo inmediato solicitado por los padres') : '';
+
+  if (typeof req.body.dailyLimitMinutes === 'number') {
+    device.dailyLimitMinutes = req.body.dailyLimitMinutes;
+  } else if (!isLocked && (device.screenTimeTodayMinutes || 0) >= (device.dailyLimitMinutes || 120)) {
+    device.dailyLimitMinutes = Math.max((device.dailyLimitMinutes || 120) + 15, (device.screenTimeTodayMinutes || 0) + 15);
+  }
 
   if (!device.pendingCommands) device.pendingCommands = [];
   device.pendingCommands.push(isLocked ? 'LOCK_DEVICE' : 'UNLOCK_DEVICE');
@@ -1170,17 +1206,19 @@ app.post('/api/devices/:id/request-screenshot', (req, res) => {
   res.json({ success: true, message: 'Comando de captura enviado' });
 });
 
-// Request 5-Second Video Clip
+// Request Video Clip (5s, 7s, 10s)
 app.post('/api/devices/:id/request-video', (req, res) => {
   const device = devices[req.params.id];
   if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
 
+  const sec = req.body.duration || device.videoClipDurationSeconds || 5;
+  const command = `TAKE_VIDEO_${sec}S`;
   if (!device.pendingCommands) device.pendingCommands = [];
-  device.pendingCommands.push('TAKE_VIDEO_5S');
+  device.pendingCommands.push(command);
 
-  console.log(`[Command] 🎥 Comando TAKE_VIDEO_5S encolado para ${device.name}`);
-  broadcast('COMMAND', { id: device.id, command: 'TAKE_VIDEO_5S' });
-  res.json({ success: true, message: 'Comando de video de 5 segundos enviado al dispositivo' });
+  console.log(`[Command] 🎥 Comando ${command} encolado para ${device.name}`);
+  broadcast('COMMAND', { id: device.id, command, duration: sec });
+  res.json({ success: true, message: `Comando de video de ${sec} segundos enviado al dispositivo` });
 });
 
 // Upload 5-Second Video Clip (Sequence of frames)
@@ -1234,17 +1272,19 @@ app.get('/api/devices/:id/video-clip', async (req, res) => {
 // Live Ambient Audio (Micrófono Ambiental)
 // ----------------------------------------------------------------
 
-// Request 5-Second Ambient Audio Capture
+// Request Ambient Audio Capture (5s, 7s, 10s)
 app.post('/api/devices/:id/request-audio', (req, res) => {
   const device = devices[req.params.id];
   if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
 
+  const sec = req.body.duration || device.audioClipDurationSeconds || 5;
+  const command = `RECORD_AUDIO_${sec}S`;
   if (!device.pendingCommands) device.pendingCommands = [];
-  device.pendingCommands.push('RECORD_AUDIO_5S');
+  device.pendingCommands.push(command);
 
-  console.log(`[Command] 🎙️ Comando RECORD_AUDIO_5S encolado para ${device.name}`);
-  broadcast('COMMAND', { id: device.id, command: 'RECORD_AUDIO_5S' });
-  res.json({ success: true, message: 'Comando de escucha ambiental de 5 segundos enviado al dispositivo' });
+  console.log(`[Command] 🎙️ Comando ${command} encolado para ${device.name}`);
+  broadcast('COMMAND', { id: device.id, command, duration: sec });
+  res.json({ success: true, message: `Comando de escucha ambiental de ${sec} segundos enviado al dispositivo` });
 });
 
 // Upload 5-Second Ambient Audio Clip
@@ -1416,7 +1456,7 @@ app.get('/api/devices/:id/geofences', async (req, res) => {
 // Save or Update Geofence
 app.post('/api/devices/:id/geofences', async (req, res) => {
   const deviceId = req.params.id;
-  const { id, name, latitude, longitude, radiusMeters, alertOnEntry, alertOnExit } = req.body;
+  const { id, name, icon, latitude, longitude, radiusMeters, alertOnEntry, alertOnExit } = req.body;
   if (!name || typeof latitude !== 'number' || typeof longitude !== 'number') {
     return res.status(400).json({ error: 'Datos de geocerca incompletos' });
   }
@@ -1426,6 +1466,7 @@ app.post('/api/devices/:id/geofences', async (req, res) => {
     id: geoId,
     deviceId,
     name,
+    icon: icon || '📍',
     latitude,
     longitude,
     radiusMeters: radiusMeters || 200,
@@ -1463,9 +1504,11 @@ app.post('/api/devices/:id/request-location', (req, res) => {
   res.json({ success: true, message: 'Comando de actualización de ubicación enviado' });
 });
 
-// Get Location Route History for Leaflet Polyline
+// Get Location Route History for Leaflet Polyline (supports date filter e.g. today, yesterday, YYYY-MM-DD)
 app.get('/api/devices/:id/location-history', async (req, res) => {
-  const history = await db.getLocationHistory(req.params.id, 100);
+  const limit = Math.min(1000, parseInt(req.query.limit, 10) || 300);
+  const date = req.query.date || null;
+  const history = await db.getLocationHistory(req.params.id, limit, date);
   res.json(history);
 });
 
@@ -1490,16 +1533,25 @@ app.post('/api/devices/:id/event', async (req, res) => {
     eventMessage = `Abrió ${appName || pkg}`;
     device.currentActiveApp = pkg;
     device.currentActiveAppName = appName || pkg;
-    eventType = 'info';
+    eventType = 'app_open';
   } else if (type === 'app_close') {
     eventMessage = `Minimizó ${appName || pkg}`;
     eventType = 'info';
   } else if (type === 'app_blocked_attempt') {
-    eventMessage = `⛔ Intentó abrir ${appName || pkg} (Bloqueada)`;
+    eventMessage = `⛔ Intentó abrir ${appName || pkg} (App Bloqueada)`;
+    eventType = 'warning';
+  } else if (type === 'daily_limit_app_attempt') {
+    eventMessage = `⛔ Intentó abrir ${appName || pkg} (Límite diario de tiempo alcanzado)`;
+    eventType = 'warning';
+  } else if (type === 'device_locked_app_attempt') {
+    eventMessage = `⛔ Intentó abrir ${appName || pkg} (Dispositivo bloqueado)`;
+    eventType = 'warning';
+  } else if (type === 'bedtime_app_attempt') {
+    eventMessage = `⛔ Intentó abrir ${appName || pkg} (Modo descanso / Noche)`;
     eventType = 'warning';
   } else if (type === 'app_limit_exceeded') {
-    eventMessage = `⌛ Límite diario de ${appName || pkg} agotado`;
-    eventType = 'alert';
+    eventMessage = `⌛ Límite individual de ${appName || pkg} agotado`;
+    eventType = 'warning';
   } else if (type === 'gps_alert') {
     eventMessage = `📍 Alerta GPS: ${message || 'Intento de desactivar ubicación detectado'}`;
     eventType = 'alert';
@@ -1514,6 +1566,8 @@ app.post('/api/devices/:id/event', async (req, res) => {
     eventMessage = `🔓 KidsShield fue desinstalado en ${device.name} con PIN de autorización del padre`;
     eventType = 'warning';
     device.isOnline = false;
+  } else if (message && (message.includes('Límite') || message.includes('límite') || message.includes('bloque') || message.includes('Bloque'))) {
+    eventType = 'warning';
   }
 
   const logEntry = {
@@ -1529,6 +1583,11 @@ app.post('/api/devices/:id/event', async (req, res) => {
 
   // Guardar persistentemente en Turso Cloud
   await db.logActivity(device.id, timeStr, eventType, eventMessage, device.familyId || 'FAM-DEFAULT-01');
+
+  broadcast('EVENT_RECORDED', {
+    id: device.id,
+    event: logEntry
+  });
 
   broadcast('PUSH_NOTIFICATION', {
     id: device.id,
@@ -1631,8 +1690,8 @@ app.post('/api/devices/:id/report', async (req, res) => {
         device.lockReason = `Límite diario de tiempo alcanzado (${device.dailyLimitMinutes} min)`;
         const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
         const alertMsg = `⏳ Límite diario de tiempo alcanzado en ${device.name} (${device.screenTimeTodayMinutes}/${device.dailyLimitMinutes} min). Dispositivo bloqueado automáticamente.`;
-        device.activityLog.unshift({ time: timeStr, type: 'alert', message: alertMsg });
-        db.logActivity(device.id, timeStr, 'alert', alertMsg, device.familyId || 'FAM-DEFAULT-01');
+        device.activityLog.unshift({ time: timeStr, type: 'warning', message: alertMsg });
+        db.logActivity(device.id, timeStr, 'warning', alertMsg, device.familyId || 'FAM-DEFAULT-01');
         broadcast('PUSH_NOTIFICATION', {
           id: device.id,
           title: 'KidsShield: Tiempo Límite Agotado',
@@ -1641,6 +1700,18 @@ app.post('/api/devices/:id/report', async (req, res) => {
           time: timeStr
         });
       }
+    } else if (device.isLocked && device.lockReason && (device.lockReason.includes('Límite') || device.lockReason.includes('tiempo')) && (device.screenTimeTodayMinutes < device.dailyLimitMinutes || device.dailyLimitMinutes === 0)) {
+      // Si aumentó el límite o queda tiempo disponible, desbloquear automáticamente
+      device.isLocked = false;
+      device.lockReason = '';
+      if (!device.pendingCommands) device.pendingCommands = [];
+      device.pendingCommands.push('UNLOCK_DEVICE');
+      const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      const unlockMsg = `🔓 Tiempo disponible en ${device.name} (${device.screenTimeTodayMinutes}/${device.dailyLimitMinutes} min). Dispositivo desbloqueado.`;
+      device.activityLog.unshift({ time: timeStr, type: 'unlock', message: unlockMsg });
+      db.logActivity(device.id, timeStr, 'unlock', unlockMsg, device.familyId || 'FAM-DEFAULT-01');
+      broadcast('COMMAND', { id: device.id, command: 'UNLOCK_DEVICE', isLocked: false });
+      broadcast('LOCK_STATE_CHANGED', { id: device.id, isLocked: false });
     }
   }
 
@@ -1666,59 +1737,113 @@ app.post('/api/devices/:id/report', async (req, res) => {
     }
   }
 
-  if (req.body.currentActiveApp) device.currentActiveApp = req.body.currentActiveApp;
+  if (req.body.currentActiveApp) {
+    if (device.currentActiveApp !== req.body.currentActiveApp) {
+      device.currentActiveApp = req.body.currentActiveApp;
+      device.currentActiveAppStartedAt = Date.now();
+    } else if (!device.currentActiveAppStartedAt) {
+      device.currentActiveAppStartedAt = Date.now();
+    }
+  }
   if (req.body.currentActiveAppName) device.currentActiveAppName = req.body.currentActiveAppName;
 
+  // Minutos de la sesión actual si la app está en primer plano en este momento
+  const currentSessionMinutes = (device.currentActiveApp && device.currentActiveAppStartedAt)
+    ? Math.max(1, Math.floor((Date.now() - device.currentActiveAppStartedAt) / 60000))
+    : 0;
+
   // Actualizar ubicación GPS SOLO si el rastreo está habilitado por los padres
+  // y se ha cumplido el intervalo configurado (o si es la primera coordenada del día)
   if (req.body.location && device.gpsTrackingEnabled !== false) {
     const lat = typeof req.body.location.latitude === 'number' ? req.body.location.latitude : req.body.location.lat;
     const lng = typeof req.body.location.longitude === 'number' ? req.body.location.longitude : req.body.location.lng;
     if (typeof lat === 'number' && typeof lng === 'number') {
-      device.location = {
-        latitude: lat,
-        longitude: lng,
-        accuracy: req.body.location.accuracy || 15,
-        address: req.body.location.address || 'Ubicación GPS en vivo',
-        lastUpdated: new Date().toISOString()
-      };
-      await db.logLocation(device.id, device.location);
-      broadcast('LOCATION_UPDATED', { id: device.id, location: device.location });
+      const now = Date.now();
+      const gpsIntervalSec = device.gpsIntervalSeconds || 600;
+      const intervalMs = gpsIntervalSec * 1000;
+      const timeSinceLastGps = now - (device._lastGpsUpdateTime || 0);
+      const isExplicit = req.body.isExplicitLocationRequest === true;
 
-      // Verificación automática de Geocercas (Entrada / Salida de Colegio o Casa)
-      try {
-        const geofences = await db.getGeofences(device.id);
-        if (!device._geofenceStates) device._geofenceStates = {};
+      // Respetar estrictamente el intervalo de actualización GPS configurado
+      if (!device.location || timeSinceLastGps >= (intervalMs - 4000) || isExplicit) {
+        device._lastGpsUpdateTime = now;
+        const prevLat = device.location ? device.location.latitude : null;
+        const prevLng = device.location ? device.location.longitude : null;
+        device.location = {
+          latitude: lat,
+          longitude: lng,
+          accuracy: req.body.location.accuracy || 15,
+          address: req.body.location.address || 'Ubicación GPS en vivo',
+          lastUpdated: new Date().toISOString()
+        };
+        await db.logLocation(device.id, device.location);
+        broadcast('LOCATION_UPDATED', { id: device.id, location: device.location });
 
-        for (const geo of geofences) {
-          const dist = calculateDistanceMeters(lat, lng, geo.latitude, geo.longitude);
-          const isInside = dist <= geo.radiusMeters;
-          const prevInside = device._geofenceStates[geo.id];
-
-          if (prevInside !== undefined && prevInside !== isInside) {
-            const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-            let geoMsg = '';
-            if (isInside && geo.alertOnEntry) {
-              geoMsg = `📍 ${device.childName || device.name} ha llegado a "${geo.name}"`;
-            } else if (!isInside && geo.alertOnExit) {
-              geoMsg = `🏃 ${device.childName || device.name} ha salido de "${geo.name}"`;
-            }
-
-            if (geoMsg) {
-              device.activityLog.unshift({ time: timeStr, type: 'info', message: geoMsg });
-              await db.logActivity(device.id, timeStr, 'info', geoMsg, device.familyId || 'FAM-DEFAULT-01');
-              broadcast('PUSH_NOTIFICATION', {
-                id: device.id,
-                title: 'Geocerca KidsShield',
-                body: geoMsg,
-                type: 'info',
-                time: timeStr
-              });
-            }
+        // Registrar punto en Historial de Actividad si se movió o si no hay registro reciente
+        try {
+          const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+          const addrStr = device.location.address && !device.location.address.includes('satelital') && !device.location.address.includes('en vivo')
+            ? device.location.address
+            : `Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)} (±${Math.round(device.location.accuracy || 15)}m)`;
+          const gpsMsg = `📍 Ubicación satelital: ${addrStr}`;
+          const lastGps = (device.activityLog || []).find(l => l.type === 'gps');
+          const distChange = (prevLat !== null && prevLng !== null) ? calculateDistanceMeters(lat, lng, prevLat, prevLng) : 999;
+          if (!lastGps || distChange >= 20) {
+            const gpsEntry = {
+              time: timeStr,
+              type: 'gps',
+              message: gpsMsg,
+              appName: 'GPS',
+              package: 'system.gps',
+              latitude: lat,
+              longitude: lng,
+              accuracy: device.location.accuracy || 15
+            };
+            device.activityLog = device.activityLog || [];
+            device.activityLog.unshift(gpsEntry);
+            await db.logActivity(device.id, timeStr, 'gps', gpsMsg, device.familyId || 'FAM-DEFAULT-01').catch(() => {});
+            broadcast('EVENT_RECORDED', { id: device.id, event: gpsEntry });
           }
-          device._geofenceStates[geo.id] = isInside;
+        } catch (logGpsErr) {
+          console.error('[GPS Log] Error registrando actividad GPS:', logGpsErr);
         }
-      } catch (geoErr) {
-        console.error('[Geofence] Error evaluando geocercas:', geoErr);
+
+        // Verificación automática de Geocercas (Entrada / Salida de Colegio o Casa)
+        try {
+          const geofences = await db.getGeofences(device.id);
+          if (!device._geofenceStates) device._geofenceStates = {};
+
+          for (const geo of geofences) {
+            const dist = calculateDistanceMeters(lat, lng, geo.latitude, geo.longitude);
+            const isInside = dist <= geo.radiusMeters;
+            const prevInside = device._geofenceStates[geo.id];
+
+            if (prevInside !== undefined && prevInside !== isInside) {
+              const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+              let geoMsg = '';
+              if (isInside && geo.alertOnEntry) {
+                geoMsg = `📍 ${device.childName || device.name} ha llegado a "${geo.name}"`;
+              } else if (!isInside && geo.alertOnExit) {
+                geoMsg = `🏃 ${device.childName || device.name} ha salido de "${geo.name}"`;
+              }
+
+              if (geoMsg) {
+                device.activityLog.unshift({ time: timeStr, type: 'info', message: geoMsg });
+                await db.logActivity(device.id, timeStr, 'info', geoMsg, device.familyId || 'FAM-DEFAULT-01');
+                broadcast('PUSH_NOTIFICATION', {
+                  id: device.id,
+                  title: 'Geocerca KidsShield',
+                  body: geoMsg,
+                  type: 'info',
+                  time: timeStr
+                });
+              }
+            }
+            device._geofenceStates[geo.id] = isInside;
+          }
+        } catch (geoErr) {
+          console.error('[Geofence] Error evaluando geocercas:', geoErr);
+        }
       }
     }
   }
@@ -1726,12 +1851,22 @@ app.post('/api/devices/:id/report', async (req, res) => {
   if (Array.isArray(req.body.appCatalog)) {
     req.body.appCatalog.forEach(incomingApp => {
       const existing = device.appCatalog.find(a => a.package === incomingApp.package);
+      const isCurrentActive = (incomingApp.package === device.currentActiveApp);
+      const incomingMin = typeof incomingApp.timeTodayMinutes === 'number' ? incomingApp.timeTodayMinutes : 0;
+
       if (existing) {
-        existing.timeTodayMinutes = incomingApp.timeTodayMinutes;
+        // No permitir que el tiempo baje a 0 mientras la app está siendo usada activamente
+        const baseMin = Math.max(existing.timeTodayMinutes || 0, incomingMin);
+        existing.timeTodayMinutes = isCurrentActive
+          ? Math.max(baseMin, (existing._baselineMinutes || baseMin) + currentSessionMinutes, currentSessionMinutes)
+          : baseMin;
         if (incomingApp.category) existing.category = incomingApp.category;
         if (incomingApp.name) existing.name = incomingApp.name;
         if (incomingApp.icon) existing.icon = incomingApp.icon;
       } else {
+        if (isCurrentActive && incomingMin === 0 && currentSessionMinutes > 0) {
+          incomingApp.timeTodayMinutes = currentSessionMinutes;
+        }
         device.appCatalog.push(incomingApp);
       }
     });
@@ -1766,7 +1901,9 @@ app.post('/api/devices/:id/report', async (req, res) => {
     bedtimeStart: device.bedtimeStart,
     bedtimeEnd: device.bedtimeEnd,
     gpsTrackingEnabled: device.gpsTrackingEnabled !== false,
-    gpsIntervalSeconds: device.gpsIntervalSeconds || 30,
+    gpsIntervalSeconds: device.gpsIntervalSeconds || 600,
+    audioClipDurationSeconds: device.audioClipDurationSeconds || 5,
+    videoClipDurationSeconds: device.videoClipDurationSeconds || 5,
     blockedApps: device.blockedApps,
     appLimits: device.appLimits || {},
     parentPin: device.parentPin,

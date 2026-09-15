@@ -48,8 +48,11 @@ public class UsageMonitorService extends Service {
     private Runnable monitorRunnable;
     private final int SYNC_INTERVAL_MS = 6000; // Cada 6 segundos para respuesta casi en tiempo real
     private int syncCycleCount = 0;
+    private static long lastLocationTimestamp = 0;
+    private static boolean isForcedLocationSync = false;
 
     public static void triggerImmediateSync() {
+        isForcedLocationSync = true;
         UsageMonitorService service = instanceRef != null ? instanceRef.get() : null;
         if (service != null) {
             service.handler.post(new Runnable() {
@@ -251,6 +254,15 @@ public class UsageMonitorService extends Service {
             if (a11y != null) {
                 a11y.kickCurrentAppIfLocked(r);
             }
+        } else if (!dailyLimitReached && !inBedtime && config.isDeviceLocked()) {
+            // Si el límite fue aumentado por los padres y queda tiempo restante (o terminó el horario nocturno), desbloquear
+            String currentReason = config.getLockReason();
+            if (currentReason == null || currentReason.isEmpty() || currentReason.contains("Límite") || currentReason.contains("tiempo") || currentReason.contains("descanso") || currentReason.contains("nocturno")) {
+                Log.i(TAG, "🔓 Tiempo restante disponible detectado (" + totalScreenTimeMinutes + "/" + config.getDailyLimitMinutes() + " min) -> Desbloqueando teléfono automáticamente");
+                config.setDeviceLocked(false);
+                config.setLockReason("");
+                com.kidsguard.parentalcontrol.ui.LockOverlayActivity.dismissIfOpen();
+            }
         }
 
         // Supervisión activa de GPS permanente
@@ -261,11 +273,26 @@ public class UsageMonitorService extends Service {
             SyncClient.sendEvent(this, "gps_alert", "system.gps", "Servicio GPS", "⚠️ El GPS ha sido apagado en el teléfono del menor.");
         }
 
-        // Get Location
-        JSONObject locationObj = getDeviceLocation();
+        // App activa en primer plano desde el servicio de accesibilidad
+        AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
+        String activePkg = a11y != null ? a11y.getCurrentActivePackage() : "";
+
+        // Get Location respetando estrictamente el intervalo configurado
+        long now = System.currentTimeMillis();
+        long intervalMs = config.getGpsIntervalSeconds() * 1000L;
+        JSONObject locationObj = null;
+        if (config.isGpsTrackingEnabled()) {
+            if (lastLocationTimestamp == 0 || (now - lastLocationTimestamp >= intervalMs) || isForcedLocationSync) {
+                locationObj = getDeviceLocation();
+                if (locationObj != null) {
+                    lastLocationTimestamp = now;
+                    isForcedLocationSync = false;
+                }
+            }
+        }
 
         // Sync with parent server
-        SyncClient.sendReport(this, battery, totalScreenTimeMinutes, "", appCatalog, locationObj, null);
+        SyncClient.sendReport(this, battery, totalScreenTimeMinutes, activePkg, appCatalog, locationObj, null);
 
         // Captura de pantalla: SOLO si el padre lo tiene configurado expresamente y no está pausado
         if (config.isAutoScreenshotEnabled() && !config.isLivePaused()) {

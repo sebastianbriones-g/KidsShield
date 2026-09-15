@@ -267,6 +267,7 @@ function renderAll() {
     initDedicatedMap();
   }
   renderActivityFeed();
+  renderHistoryTab();
 }
 
 // Render empty / waiting state when no device is linked
@@ -435,10 +436,15 @@ function renderHeader() {
   const pairingCodeDisplay = document.getElementById('pairingCodeDisplay');
   if (pairingCodeDisplay) pairingCodeDisplay.textContent = currentDevice.id;
 
-  if (currentDevice.isLocked) {
+  const usedHeader = currentDevice.screenTimeTodayMinutes || 0;
+  const limitHeader = currentDevice.dailyLimitMinutes || 120;
+  const hasNoTimeHeader = limitHeader > 0 && usedHeader >= limitHeader;
+  const isMasterLocked = Boolean(currentDevice.isLocked) || hasNoTimeHeader;
+
+  if (isMasterLocked) {
     btnMasterLock.classList.add('is-locked');
     masterLockIcon.textContent = '🔓';
-    masterLockText.textContent = 'Desbloquear Teléfono';
+    masterLockText.textContent = hasNoTimeHeader ? 'Desbloquear (+15 min)' : 'Desbloquear Teléfono';
   } else {
     btnMasterLock.classList.remove('is-locked');
     masterLockIcon.textContent = '🔒';
@@ -456,18 +462,37 @@ function renderHero() {
   const percent = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
   screenTimeProgressBar.style.width = `${percent}%`;
 
+  const hasNoTime = limit > 0 && used >= limit;
+  const isDeviceLocked = Boolean(currentDevice.isLocked) || hasNoTime;
+
   if (used === 0) {
     screenTimeProgressBar.className = 'progress-bar-fill';
     limitStatusBadge.className = 'badge badge-accent';
     limitStatusBadge.textContent = '🟢 Sin uso hoy';
-  } else if (used >= limit) {
+  } else if (hasNoTime) {
     screenTimeProgressBar.className = 'progress-bar-fill progress-exceeded';
     limitStatusBadge.className = 'badge badge-warning';
-    limitStatusBadge.textContent = '⚠️ Límite diario excedido';
+    limitStatusBadge.textContent = '🔒 Tiempo agotado (Bloqueado)';
   } else {
     screenTimeProgressBar.className = 'progress-bar-fill';
     limitStatusBadge.className = 'badge badge-accent';
     limitStatusBadge.textContent = `Restan ${formatMinutes(limit - used)}`;
+  }
+
+  // Botón Directo de Bloquear / Desbloquear en Tiempo de Pantalla
+  const btnHeroLock = document.getElementById('btnHeroScreenTimeLock');
+  const heroLockIcon = document.getElementById('heroScreenTimeLockIcon');
+  const heroLockText = document.getElementById('heroScreenTimeLockText');
+  if (btnHeroLock && heroLockIcon && heroLockText) {
+    if (isDeviceLocked) {
+      btnHeroLock.className = 'btn-hero-lock is-locked';
+      heroLockIcon.textContent = '🔓';
+      heroLockText.textContent = hasNoTime ? 'Desbloquear (+15 min de uso)' : 'Desbloquear Teléfono';
+    } else {
+      btnHeroLock.className = 'btn-hero-lock is-unlocked';
+      heroLockIcon.textContent = '🔒';
+      heroLockText.textContent = 'Bloquear Teléfono Ahora';
+    }
   }
 
   // Active App
@@ -476,7 +501,16 @@ function renderHero() {
     activeAppIcon.textContent = activeApp.icon || '📱';
     activeAppName.textContent = activeApp.name;
     activeAppCategory.textContent = activeApp.category || 'Aplicación';
-    activeAppDesc.textContent = `En uso hoy: ${formatMinutes(activeApp.timeTodayMinutes || 0)}`;
+
+    // Calcular tiempo dinámico en vivo si está en primer plano ahora
+    let currentUsageMinutes = activeApp.timeTodayMinutes || 0;
+    if (currentDevice.currentActiveAppStartedAt) {
+      const elapsedSessionMin = Math.max(1, Math.floor((Date.now() - new Date(currentDevice.currentActiveAppStartedAt).getTime()) / 60000));
+      currentUsageMinutes = Math.max(currentUsageMinutes, elapsedSessionMin);
+    } else if (currentUsageMinutes === 0 && currentDevice.isOnline) {
+      currentUsageMinutes = 1; // Sesión en curso
+    }
+    activeAppDesc.textContent = `En uso hoy: ${formatMinutes(currentUsageMinutes)}`;
 
     btnQuickBlockActiveApp.disabled = false;
     btnQuickBlockActiveApp.style.opacity = '1';
@@ -495,7 +529,11 @@ function renderHero() {
     activeAppIcon.textContent = '📱';
     activeAppName.textContent = currentDevice.currentActiveAppName || (currentDevice.isOnline ? 'En pantalla de inicio / Reposo' : 'Sin aplicación activa');
     activeAppCategory.textContent = currentDevice.isOnline ? 'Sistema' : 'En espera';
-    activeAppDesc.textContent = currentDevice.isOnline ? 'El teléfono no tiene ninguna aplicación en primer plano' : 'Esperando actividad en el teléfono móvil';
+    if (currentDevice.currentActiveAppName && currentDevice.isOnline) {
+      activeAppDesc.textContent = `En uso hoy: 1m (activa ahora)`;
+    } else {
+      activeAppDesc.textContent = currentDevice.isOnline ? 'El teléfono no tiene ninguna aplicación en primer plano' : 'Esperando actividad en el teléfono móvil';
+    }
 
     btnQuickBlockActiveApp.disabled = true;
     btnQuickBlockActiveApp.textContent = '⛔ Bloquear Esta App';
@@ -527,7 +565,10 @@ function renderAppList() {
   }
 
   const filtered = currentDevice.appCatalog.filter(app => {
-    const matchesCat = activeCategoryFilter === 'all' || app.category === activeCategoryFilter;
+    const matchesCat = activeCategoryFilter === 'all' ||
+                       app.category === activeCategoryFilter ||
+                       ((activeCategoryFilter === 'Navegación Web' || activeCategoryFilter === 'Navegadores' || activeCategoryFilter === 'Web') &&
+                        (app.category.includes('Navega') || app.category.includes('Web') || (app.name && app.name.toLowerCase().includes('chrome'))));
     const matchesSearch = app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           app.package.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCat && matchesSearch;
@@ -542,12 +583,50 @@ function renderAppList() {
     return;
   }
 
+  const usedMinutes = currentDevice.screenTimeTodayMinutes || 0;
+  const limitMinutes = currentDevice.dailyLimitMinutes || 120;
+  const isTimeDepleted = limitMinutes > 0 && usedMinutes >= limitMinutes;
+  const isDeviceEffectivelyLocked = Boolean(currentDevice.isLocked) || isTimeDepleted;
+
+  if (isDeviceEffectivelyLocked) {
+    const lockedBanner = document.createElement('div');
+    lockedBanner.className = 'device-locked-banner';
+    lockedBanner.style.cssText = 'background: rgba(239, 68, 68, 0.16); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; color: #fca5a5; font-size: 0.84rem; display: flex; align-items: center; gap: 8px;';
+    lockedBanner.innerHTML = isTimeDepleted 
+      ? '<span>⌛</span><span><strong>Límite Diario Agotado:</strong> Todas las aplicaciones están restringidas por tiempo de pantalla agotado.</span>'
+      : '<span>🔒</span><span><strong>Dispositivo Bloqueado:</strong> Todas las aplicaciones están restringidas por el control parental.</span>';
+    appListContainer.appendChild(lockedBanner);
+  }
+
   filtered.forEach(app => {
     const appLimit = (currentDevice.appLimits && currentDevice.appLimits[app.package]) || 0;
     const isLimitExceeded = appLimit > 0 && app.timeTodayMinutes >= appLimit;
+    const isEffectiveBlocked = isDeviceEffectivelyLocked || app.isBlocked || isLimitExceeded;
 
     const row = document.createElement('div');
-    row.className = `app-row ${app.isBlocked || isLimitExceeded ? 'is-blocked' : ''}`;
+    row.className = `app-row ${isEffectiveBlocked ? 'is-blocked' : ''}`;
+
+    let timeSub = `⏱️ ${formatMinutes(app.timeTodayMinutes)} hoy`;
+    if (isTimeDepleted) {
+      timeSub = '🔒 Bloqueada (Tiempo agotado)';
+    } else if (currentDevice.isLocked) {
+      timeSub = '🔒 Bloqueada (Dispositivo bloqueado)';
+    } else if (app.isBlocked) {
+      timeSub = '🚫 Acceso bloqueado';
+    } else if (isLimitExceeded) {
+      timeSub = '⌛ Límite individual agotado';
+    }
+
+    let btnText = '✓ Permitida';
+    let btnClass = 'btn-allowed';
+    if (isDeviceEffectivelyLocked) {
+      btnText = '🔒 Bloqueada';
+      btnClass = 'btn-blocked';
+    } else if (app.isBlocked) {
+      btnText = '🚫 Bloqueada';
+      btnClass = 'btn-blocked';
+    }
+
     row.innerHTML = `
       <div class="app-info-left">
         <div class="app-icon-badge">${app.icon}</div>
@@ -557,7 +636,7 @@ function renderAppList() {
             <span class="app-tag">${app.category}</span>
             ${appLimit > 0 ? `<span class="app-limit-badge ${isLimitExceeded ? 'exceeded' : ''}">⏱️ Límite: ${appLimit}m</span>` : ''}
           </div>
-          <span class="app-time-sub">${app.isBlocked ? '🚫 Acceso bloqueado' : (isLimitExceeded ? '⌛ Límite individual agotado' : `⏱️ ${formatMinutes(app.timeTodayMinutes)} hoy`)}</span>
+          <span class="app-time-sub">${timeSub}</span>
         </div>
       </div>
       <div class="app-item-actions">
@@ -570,8 +649,8 @@ function renderAppList() {
           <option value="90" ${appLimit === 90 ? 'selected' : ''}>1.5 horas</option>
           <option value="120" ${appLimit === 120 ? 'selected' : ''}>2 horas</option>
         </select>
-        <button class="toggle-block-btn ${app.isBlocked ? 'btn-blocked' : 'btn-allowed'}" data-pkg="${app.package}">
-          ${app.isBlocked ? '🚫 Bloqueada' : '✓ Permitida'}
+        <button class="toggle-block-btn ${btnClass}" data-pkg="${app.package}">
+          ${btnText}
         </button>
       </div>
     `;
@@ -677,22 +756,31 @@ function renderSimulator() {
   const appLimit = (activeApp && currentDevice.appLimits) ? currentDevice.appLimits[activeApp.package] : 0;
   const isAppLimitExceeded = appLimit > 0 && activeApp && (activeApp.timeTodayMinutes || 0) >= appLimit;
   const isBlockedApp = activeApp && (activeApp.isBlocked || isAppLimitExceeded);
-  const isOverLimit = (currentDevice.screenTimeTodayMinutes || 0) >= (currentDevice.dailyLimitMinutes || 120);
-
-  if (isBlockedApp || isOverLimit) {
-    simLockOverlay.classList.add('active');
-    if (isAppLimitExceeded) {
-      simLockTitle.textContent = '⌛ Límite de App Agotado';
-      simLockReason.textContent = `Has alcanzado el límite diario de ${appLimit} min en ${activeApp.name}.`;
-    } else if (isBlockedApp) {
-      simLockTitle.textContent = '🚫 Aplicación Prohibida';
-      simLockReason.textContent = `El uso de ${activeApp.name} ha sido restringido por tus padres.`;
-    } else if (isOverLimit) {
-      simLockTitle.textContent = '⌛ Tiempo Agotado';
-      simLockReason.textContent = 'Has alcanzado el límite diario permitido de tiempo de pantalla.';
+  const liveStatusBadge = document.getElementById('liveStatusBadge');
+  if (isBlockedApp || isOverLimit || currentDevice.isLocked) {
+    if (liveStatusBadge) {
+      if (isAppLimitExceeded) {
+        liveStatusBadge.textContent = '⌛ Límite App';
+        liveStatusBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+        liveStatusBadge.style.color = '#f87171';
+      } else if (isBlockedApp) {
+        liveStatusBadge.textContent = '🚫 App Prohibida';
+        liveStatusBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+        liveStatusBadge.style.color = '#f87171';
+      } else {
+        liveStatusBadge.textContent = '🔒 Límite Agotado';
+        liveStatusBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+        liveStatusBadge.style.color = '#f87171';
+      }
     }
+    if (simLockOverlay) simLockOverlay.classList.remove('active');
   } else {
-    simLockOverlay.classList.remove('active');
+    if (liveStatusBadge) {
+      liveStatusBadge.textContent = (typeof isLiveStreamingPaused !== 'undefined' && isLiveStreamingPaused) ? '⏸️ Pausado' : '🟢 En Vivo';
+      liveStatusBadge.style.background = '';
+      liveStatusBadge.style.color = '';
+    }
+    if (simLockOverlay) simLockOverlay.classList.remove('active');
   }
 }
 
@@ -919,15 +1007,36 @@ function increaseDailyLimit15m() {
     showToast('No hay dispositivo vinculado', 'warning');
     return;
   }
+  const used = currentDevice.screenTimeTodayMinutes || 0;
   const current = currentDevice.dailyLimitMinutes || 120;
-  const newLimit = Math.min(720, current + 15);
+  const newLimit = Math.min(720, Math.max(current + 15, used > current ? used + 15 : current + 15));
   currentDevice.dailyLimitMinutes = newLimit;
-  updateRemoteConfig({ dailyLimitMinutes: newLimit });
+
+  const payload = { dailyLimitMinutes: newLimit };
+  const hasRemaining = used < newLimit;
+  if (hasRemaining) {
+    currentDevice.isLocked = false;
+    currentDevice.lockReason = '';
+    payload.isLocked = false;
+    payload.lockReason = '';
+    updateLockUI(false);
+    devicesList.forEach(d => {
+      if (d.id === currentDevice.id) {
+        d.isLocked = false;
+        d.dailyLimitMinutes = newLimit;
+        d.lockReason = '';
+      }
+    });
+    renderFamilyOverviewCards();
+  }
+
+  updateRemoteConfig(payload);
   renderHero();
   renderScheduleControls();
+  renderAppList();
   const cardDaily = document.getElementById('cardDailyTimeLimitText');
   if (cardDaily) cardDaily.textContent = formatMinutes(newLimit);
-  showToast(`Límite aumentado a ${formatMinutes(newLimit)}`, 'success');
+  showToast(`Límite aumentado a ${formatMinutes(newLimit)}${hasRemaining ? ' • Dispositivo desbloqueado' : ''}`, 'success');
 }
 
 function increaseDailyLimit30m() {
@@ -935,15 +1044,36 @@ function increaseDailyLimit30m() {
     showToast('No hay dispositivo vinculado', 'warning');
     return;
   }
+  const used = currentDevice.screenTimeTodayMinutes || 0;
   const current = currentDevice.dailyLimitMinutes || 120;
-  const newLimit = Math.min(720, current + 30);
+  const newLimit = Math.min(720, Math.max(current + 30, used > current ? used + 30 : current + 30));
   currentDevice.dailyLimitMinutes = newLimit;
-  updateRemoteConfig({ dailyLimitMinutes: newLimit });
+
+  const payload = { dailyLimitMinutes: newLimit };
+  const hasRemaining = used < newLimit;
+  if (hasRemaining) {
+    currentDevice.isLocked = false;
+    currentDevice.lockReason = '';
+    payload.isLocked = false;
+    payload.lockReason = '';
+    updateLockUI(false);
+    devicesList.forEach(d => {
+      if (d.id === currentDevice.id) {
+        d.isLocked = false;
+        d.dailyLimitMinutes = newLimit;
+        d.lockReason = '';
+      }
+    });
+    renderFamilyOverviewCards();
+  }
+
+  updateRemoteConfig(payload);
   renderHero();
   renderScheduleControls();
+  renderAppList();
   const cardDaily = document.getElementById('cardDailyTimeLimitText');
   if (cardDaily) cardDaily.textContent = formatMinutes(newLimit);
-  showToast(`⚡ Límite aumentado a ${formatMinutes(newLimit)} (+30m)`, 'success');
+  showToast(`⚡ Límite aumentado a ${formatMinutes(newLimit)} (+30m)${hasRemaining && payload.isLocked === false ? ' • Dispositivo desbloqueado' : ''}`, 'success');
 }
 
 // Live Screenshot Pause / Resume
@@ -1295,12 +1425,14 @@ function renderFamilyOverviewCards() {
         </div>
 
         <div class="card-actions-row">
-          <button class="btn-card-view-screen" onclick="selectAndFocusScreen('${dev.id}')">
+          <button class="btn-card-view-screen" onclick="selectAndFocusScreen('${dev.id}')" style="${isSelected ? 'width: 100%; flex: 1;' : ''}">
             ${isSelected ? '👁️ Viendo en Vivo' : '👁️ Ver Pantalla'}
           </button>
+          ${!isSelected ? `
           <button class="btn-card-quick-lock ${isLocked ? 'is-locked' : 'is-unlocked'}" onclick="toggleDeviceLockById('${dev.id}')">
             ${isLocked ? '🔓 Desbloquear' : '🔒 Bloquear'}
           </button>
+          ` : ''}
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 0.78rem;">
@@ -1326,17 +1458,39 @@ function selectAndFocusScreen(devId) {
 }
 
 function updateLockUI(isLocked) {
+  const used = (currentDevice && currentDevice.screenTimeTodayMinutes) || 0;
+  const limit = (currentDevice && currentDevice.dailyLimitMinutes) || 120;
+  const hasNoTime = limit > 0 && used >= limit;
+  const effectiveLocked = Boolean(isLocked) || hasNoTime;
+
   if (btnMasterLock && masterLockIcon && masterLockText) {
-    if (isLocked) {
+    if (effectiveLocked) {
       btnMasterLock.classList.add('is-locked');
       masterLockIcon.textContent = '🔓';
-      masterLockText.textContent = 'Desbloquear Teléfono';
+      masterLockText.textContent = hasNoTime ? 'Desbloquear (+15 min)' : 'Desbloquear Teléfono';
     } else {
       btnMasterLock.classList.remove('is-locked');
       masterLockIcon.textContent = '🔒';
       masterLockText.textContent = 'Bloquear Teléfono Ahora';
     }
   }
+
+  // Sincronizar botón directo en tarjeta Tiempo de Pantalla
+  const btnHeroLock = document.getElementById('btnHeroScreenTimeLock');
+  const heroLockIcon = document.getElementById('heroScreenTimeLockIcon');
+  const heroLockText = document.getElementById('heroScreenTimeLockText');
+  if (btnHeroLock && heroLockIcon && heroLockText) {
+    if (effectiveLocked) {
+      btnHeroLock.className = 'btn-hero-lock is-locked';
+      heroLockIcon.textContent = '🔓';
+      heroLockText.textContent = hasNoTime ? 'Desbloquear (+15 min de uso)' : 'Desbloquear Teléfono';
+    } else {
+      btnHeroLock.className = 'btn-hero-lock is-unlocked';
+      heroLockIcon.textContent = '🔒';
+      heroLockText.textContent = 'Bloquear Teléfono Ahora';
+    }
+  }
+
   if (currentDevice) {
     currentDevice.isLocked = isLocked;
   }
@@ -1344,55 +1498,116 @@ function updateLockUI(isLocked) {
 }
 
 async function toggleDeviceLockById(devId) {
+  const targetId = devId || (currentDevice && currentDevice.id) || (devicesList[0] && devicesList[0].id);
+  if (!targetId) {
+    showToast('No hay dispositivo disponible para bloquear', 'warning');
+    return;
+  }
+
   try {
-    const dev = devicesList.find(d => d.id === devId);
-    const newLock = dev ? !dev.isLocked : true;
+    const dev = devicesList.find(d => d.id === targetId);
+    const used = (dev && dev.screenTimeTodayMinutes) || (currentDevice && currentDevice.screenTimeTodayMinutes) || 0;
+    const limit = (dev && dev.dailyLimitMinutes) || (currentDevice && currentDevice.dailyLimitMinutes) || 120;
+    const hasNoTime = limit > 0 && used >= limit;
+    const isCurrentlyLocked = Boolean((dev && dev.isLocked) || (currentDevice && currentDevice.isLocked) || hasNoTime);
+
+    // Si está bloqueado (ya sea por toggle manual o porque se le agotó el tiempo), al pulsar se DESBLOQUEA
+    const newLock = !isCurrentlyLocked;
+    let extraLimit = null;
+
+    // Si se desbloquea y el menor no tiene tiempo disponible,
+    // garantizamos que pueda usar el móvil otorgando +15 min sobre lo usado hoy
+    if (!newLock && hasNoTime) {
+      extraLimit = Math.max(limit + 15, used + 15);
+      if (dev) dev.dailyLimitMinutes = extraLimit;
+      if (currentDevice && currentDevice.id === targetId) {
+        currentDevice.dailyLimitMinutes = extraLimit;
+      }
+    }
 
     // Actualización optimista inmediata
-    if (dev) dev.isLocked = newLock;
-    if (currentDevice && currentDevice.id === devId) {
+    if (dev) {
+      dev.isLocked = newLock;
+      if (!newLock) dev.lockReason = '';
+    }
+    if (currentDevice && currentDevice.id === targetId) {
       currentDevice.isLocked = newLock;
+      if (!newLock) currentDevice.lockReason = '';
       updateLockUI(newLock);
+      renderHero();
+      renderScheduleControls();
+      renderAppList();
     }
     renderFamilyOverviewCards();
     if (document.getElementById('tabViewFamily') && !document.getElementById('tabViewFamily').classList.contains('hidden')) {
       renderFamilyChildrenCards();
     }
 
-    const res = await apiFetch(`/api/devices/${devId}/toggle-lock`, {
+    const payload = { 
+      isLocked: newLock, 
+      lockReason: newLock ? 'Bloqueo inmediato solicitado por los padres' : '' 
+    };
+    if (extraLimit) payload.dailyLimitMinutes = extraLimit;
+
+    const res = await apiFetch(`/api/devices/${targetId}/toggle-lock`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isLocked: newLock })
+      body: JSON.stringify(payload)
     });
 
     if (res.ok) {
       const data = await res.json();
       const actualLock = (data && typeof data.isLocked === 'boolean') ? data.isLocked : newLock;
-      if (dev) dev.isLocked = actualLock;
-      if (currentDevice && currentDevice.id === devId) {
+      if (dev) {
+        dev.isLocked = actualLock;
+        if (data && data.dailyLimitMinutes) dev.dailyLimitMinutes = data.dailyLimitMinutes;
+        if (!actualLock) dev.lockReason = '';
+      }
+      if (currentDevice && currentDevice.id === targetId) {
         currentDevice.isLocked = actualLock;
+        if (data && data.dailyLimitMinutes) currentDevice.dailyLimitMinutes = data.dailyLimitMinutes;
+        if (!actualLock) currentDevice.lockReason = '';
         updateLockUI(actualLock);
+        renderHero();
+        renderScheduleControls();
+        renderAppList();
       }
       renderFamilyOverviewCards();
       if (document.getElementById('tabViewFamily') && !document.getElementById('tabViewFamily').classList.contains('hidden')) {
         renderFamilyChildrenCards();
       }
-      showToast(`🔒 ${dev ? (dev.childName || dev.name) : 'Dispositivo'} ${actualLock ? 'bloqueado' : 'desbloqueado'} con éxito`, actualLock ? 'warning' : 'success');
+      showToast(
+        actualLock 
+          ? `🔒 ${dev ? (dev.childName || dev.name) : 'Dispositivo'} bloqueado con éxito` 
+          : `🔓 ${dev ? (dev.childName || dev.name) : 'Dispositivo'} desbloqueado con éxito${extraLimit ? ' (+15 min de uso otorgados)' : ''}`, 
+        actualLock ? 'warning' : 'success'
+      );
     } else {
-      // Revertir en caso de falla
-      if (dev) dev.isLocked = !newLock;
-      if (currentDevice && currentDevice.id === devId) {
-        currentDevice.isLocked = !newLock;
-        updateLockUI(!newLock);
-      }
-      renderFamilyOverviewCards();
-      showToast('Error al cambiar estado de bloqueo del dispositivo', 'danger');
+      // Fallback a través del endpoint de configuración remota
+      const fallbackPayload = {
+        isLocked: newLock,
+        lockReason: newLock ? 'Bloqueo inmediato solicitado por los padres' : ''
+      };
+      if (extraLimit) fallbackPayload.dailyLimitMinutes = extraLimit;
+      await updateRemoteConfig(fallbackPayload);
+      showToast(`🔒 Dispositivo ${newLock ? 'bloqueado' : 'desbloqueado'} con éxito`, newLock ? 'warning' : 'success');
     }
   } catch (err) {
-    console.error('Error cambiando bloqueo:', err);
-    showToast('Error de comunicación al bloquear', 'danger');
+    console.error('Error cambiando bloqueo, aplicando respaldo:', err);
+    try {
+      const dev = devicesList.find(d => d.id === targetId);
+      const fallbackLock = dev ? dev.isLocked : true;
+      await updateRemoteConfig({
+        isLocked: fallbackLock,
+        lockReason: fallbackLock ? 'Bloqueo inmediato solicitado por los padres' : ''
+      });
+      showToast(`🔒 Dispositivo actualizado con éxito`, 'info');
+    } catch (fallbackErr) {
+      showToast('Error al cambiar bloqueo. Verifica la conexión.', 'danger');
+    }
   }
 }
+window.toggleDeviceLockById = toggleDeviceLockById;
 
 // ----------------------------------------------------------------
 // Tab 2: Mi Familia (Gestión y 3 Accesos Directos Obligatorios)
@@ -2251,11 +2466,161 @@ function updatePreviewVideoFrame(idx) {
 // ----------------------------------------------------------------
 // Tab 7: Historial Completo
 // ----------------------------------------------------------------
-function renderHistoryTab() {
+let activeHistoryTabFilter = 'all';
+let cachedLocationHistory = null;
+let lastLocationHistoryFetch = 0;
+
+function calculateDistanceMetersClient(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function parseLogTimeToTimestamp(timeStr) {
+  if (!timeStr) return 0;
+  if (timeStr.includes('T') || timeStr.includes('-')) {
+    const t = new Date(timeStr).getTime();
+    if (!isNaN(t)) return t;
+  }
+  const parts = timeStr.split(':');
+  if (parts.length >= 2) {
+    const d = new Date();
+    d.setHours(parseInt(parts[0], 10), parseInt(parts[1], 10), parseInt(parts[2] || 0, 10), 0);
+    return d.getTime();
+  }
+  return 0;
+}
+
+async function fetchLocationHistoryForHistoryTab() {
+  if (!currentDevice) return [];
+  const now = Date.now();
+  if (cachedLocationHistory && (now - lastLocationHistoryFetch < 8000)) {
+    return cachedLocationHistory;
+  }
+  try {
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/location-history`);
+    if (res.ok) {
+      const data = await res.json();
+      cachedLocationHistory = Array.isArray(data) ? data : [];
+      lastLocationHistoryFetch = now;
+      return cachedLocationHistory;
+    }
+  } catch (e) {
+    console.error('Error obteniendo historial GPS para la pestaña de historial:', e);
+  }
+  return cachedLocationHistory || [];
+}
+
+function switchMonitoringView(viewName) {
+  if (typeof switchDashboardView === 'function') {
+    switchDashboardView(viewName);
+  } else {
+    const navBtn = document.querySelector(`.sidebar-nav-item[data-view="${viewName}"]`) || document.getElementById('sidebarNavMap');
+    if (navBtn) navBtn.click();
+  }
+}
+window.switchMonitoringView = switchMonitoringView;
+
+function viewLocationOnMap(lat, lng, label) {
+  switchMonitoringView('map');
+  setTimeout(() => {
+    const mapInstance = (typeof dedicatedLeafletMap !== 'undefined' && dedicatedLeafletMap) ? dedicatedLeafletMap : (typeof leafletMap !== 'undefined' ? leafletMap : null);
+    if (mapInstance) {
+      mapInstance.setView([lat, lng], 17);
+      if (typeof L !== 'undefined') {
+        L.popup()
+          .setLatLng([lat, lng])
+          .setContent(`<strong>📍 Registro Histórico GPS</strong><br>${label ? `Hora: ${label}<br>` : ''}<small>Lat: ${Number(lat).toFixed(5)}, Lng: ${Number(lng).toFixed(5)}</small>`)
+          .openOn(mapInstance);
+      }
+    }
+  }, 300);
+}
+window.viewLocationOnMap = viewLocationOnMap;
+
+function setupHistoryTabFilters() {
+  const filterPills = document.querySelectorAll('#historyTabFilterPills .filter-pill');
+  filterPills.forEach(btn => {
+    btn.addEventListener('click', () => {
+      filterPills.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeHistoryTabFilter = btn.dataset.type || 'all';
+      renderHistoryTab();
+    });
+  });
+}
+
+async function renderHistoryTab() {
   const feed = document.getElementById('historyTabActivityFeed');
   if (!feed) return;
 
-  if (!currentDevice || !currentDevice.activityLog || currentDevice.activityLog.length === 0) {
+  if (!currentDevice) {
+    feed.innerHTML = `
+      <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+        <span style="font-size: 2rem;">🕒</span><br>Sin dispositivo seleccionado
+      </div>
+    `;
+    return;
+  }
+
+  // 1. Eventos estándar
+  const standardLogs = (currentDevice.activityLog || []).map(item => ({
+    ...item,
+    sortTimestamp: item.sortTimestamp || item.timestamp || parseLogTimeToTimestamp(item.time)
+  }));
+
+  // 2. Obtener historial GPS
+  const gpsRaw = await fetchLocationHistoryForHistoryTab();
+  const sortedGpsDesc = [...gpsRaw].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  // Muestrear puntos GPS para no saturar la vista si estuvo detenido
+  const sampledGps = [];
+  let lastGps = null;
+  for (const loc of sortedGpsDesc) {
+    if (!loc.latitude || !loc.longitude) continue;
+    if (!lastGps) {
+      sampledGps.push(loc);
+      lastGps = loc;
+    } else {
+      const dist = calculateDistanceMetersClient(loc.latitude, loc.longitude, lastGps.latitude, lastGps.longitude);
+      const timeDiff = Math.abs(new Date(loc.timestamp).getTime() - new Date(lastGps.timestamp).getTime());
+      if (dist >= 15 || timeDiff >= 120000) {
+        sampledGps.push(loc);
+        lastGps = loc;
+      }
+    }
+  }
+
+  const gpsLogs = sampledGps.map(loc => {
+    const d = loc.timestamp ? new Date(loc.timestamp) : new Date();
+    const timeStr = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const lat = Number(loc.latitude).toFixed(5);
+    const lng = Number(loc.longitude).toFixed(5);
+    const acc = Math.round(loc.accuracy || 10);
+    const addr = loc.address && !loc.address.includes('satelital') ? loc.address : 'Ubicación GPS Satelital';
+    return {
+      time: timeStr,
+      type: 'gps',
+      appName: '📍 GPS y Ubicación',
+      package: 'system.gps',
+      message: `${addr} • Lat: ${lat}, Lng: ${lng} (±${acc}m)`,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      sortTimestamp: d.getTime()
+    };
+  });
+
+  // 3. Unificar y ordenar cronológicamente inverso
+  const unified = [...standardLogs, ...gpsLogs].sort((a, b) => (b.sortTimestamp || 0) - (a.sortTimestamp || 0));
+
+  if (unified.length === 0) {
     feed.innerHTML = `
       <div style="text-align: center; padding: 40px; color: var(--text-muted);">
         <span style="font-size: 2rem;">🕒</span><br>Sin actividad registrada en este dispositivo
@@ -2264,26 +2629,101 @@ function renderHistoryTab() {
     return;
   }
 
-  feed.innerHTML = currentDevice.activityLog.map(item => {
-    const type = item.type || 'info';
+  // 4. Filtrar según píldora seleccionada: 'all', 'blocked', 'app_open', 'alert', 'gps'
+  const filtered = unified.filter(item => {
+    if (activeHistoryTabFilter === 'all') return true;
+    const type = (item.type || '').toLowerCase();
+    const msg = (item.message || '').toLowerCase();
+
+    const isBlock = type === 'blocked' || type === 'warning' || type.includes('block') ||
+                    type.includes('limit') || type.includes('locked') ||
+                    msg.includes('límite') || msg.includes('bloque') || msg.includes('descanso');
+
+    const isOpen = type === 'app_open' || (type === 'info' && msg.includes('abrió')) || msg.includes('abrió');
+
+    const isGps = type === 'gps' || type.includes('gps') || type.includes('location') ||
+                  msg.includes('gps') || msg.includes('ubicación') || msg.includes('geocerca');
+
+    const isAlert = (type === 'alert' || type === 'danger' || type.includes('alert') ||
+                    type.includes('uninstall') || msg.includes('alerta') || msg.includes('⚠️') || msg.includes('🚨')) && !isGps;
+
+    if (activeHistoryTabFilter === 'blocked' || activeHistoryTabFilter === 'warning') {
+      return isBlock;
+    }
+    if (activeHistoryTabFilter === 'app_open' || activeHistoryTabFilter === 'info') {
+      return isOpen;
+    }
+    if (activeHistoryTabFilter === 'alert') {
+      return isAlert;
+    }
+    if (activeHistoryTabFilter === 'gps') {
+      return isGps;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    let filterLabel = 'este filtro';
+    if (activeHistoryTabFilter === 'blocked') filterLabel = '🛑 Bloqueos';
+    else if (activeHistoryTabFilter === 'app_open') filterLabel = '🚀 Aperturas';
+    else if (activeHistoryTabFilter === 'alert') filterLabel = '⚠️ Alertas';
+    else if (activeHistoryTabFilter === 'gps') filterLabel = '📍 GPS y Ubicación';
+
+    feed.innerHTML = `
+      <div style="text-align: center; padding: 36px 16px; color: var(--text-muted); font-size: 0.88rem;">
+        No hay registros para ${filterLabel}.
+      </div>
+    `;
+    return;
+  }
+
+  feed.innerHTML = filtered.map(item => {
+    const type = (item.type || '').toLowerCase();
+    const msg = (item.message || '').toLowerCase();
+
+    const isBlock = type === 'blocked' || type === 'warning' || type.includes('block') ||
+                    type.includes('limit') || type.includes('locked') ||
+                    msg.includes('límite') || msg.includes('bloque') || msg.includes('descanso');
+
+    const isOpen = type === 'app_open' || (type === 'info' && msg.includes('abrió')) || msg.includes('abrió');
+
+    const isGps = type === 'gps' || type.includes('gps') || type.includes('location') || msg.includes('ubicación') || msg.includes('geocerca');
+
+    const isAlert = (type === 'alert' || type === 'danger' || type.includes('alert') ||
+                    type.includes('uninstall') || msg.includes('alerta') || msg.includes('⚠️') || msg.includes('🚨')) && !isGps;
+
     let icon = 'ℹ️';
-    if (type === 'blocked' || type === 'warning') {
+    let itemClass = 'info';
+    if (isGps) {
+      icon = '📍';
+      itemClass = 'gps';
+    } else if (isBlock) {
       icon = '🛑';
-    } else if (type === 'alert') {
-      icon = '⚠️';
-    } else if (type === 'app_open') {
+      itemClass = 'warning';
+    } else if (isOpen) {
       icon = '🚀';
+      itemClass = 'info';
+    } else if (isAlert) {
+      icon = '⚠️';
+      itemClass = 'alert';
     }
 
+    const hasCoords = typeof item.latitude === 'number' && typeof item.longitude === 'number';
+
     return `
-      <div class="activity-feed-item ${type}" style="display: flex; gap: 12px; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.06);">
-        <span style="font-size: 1.3rem;">${icon}</span>
+      <div class="activity-feed-item ${itemClass}" style="display: flex; gap: 12px; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.06); align-items: flex-start;">
+        <span style="font-size: 1.3rem; line-height: 1.2;">${icon}</span>
         <div style="flex: 1;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <strong style="color: #fff; font-size: 0.88rem;">${item.appName || item.package || 'Sistema'}</strong>
-            <span style="font-size: 0.75rem; color: var(--text-muted);">${item.time || ''}</span>
+            <span style="font-size: 0.74rem; color: var(--text-muted);">${item.time || ''}</span>
           </div>
-          <p style="color: #cbd5e1; font-size: 0.82rem; margin: 3px 0 0 0;">${item.message || ''}</p>
+          <p style="color: #cbd5e1; font-size: 0.82rem; margin: 4px 0 0 0; line-height: 1.35;">${item.message || ''}</p>
+          ${hasCoords ? `
+            <button type="button" class="btn-history-map-link" onclick="viewLocationOnMap(${item.latitude}, ${item.longitude}, '${item.time || ''}')" style="margin-top: 6px; font-size: 0.74rem; padding: 3px 8px; border-radius: 6px; color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); cursor: pointer; background: rgba(56, 189, 248, 0.1); display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s ease;">
+              🗺️ Ver en Mapa
+            </button>
+          ` : ''}
         </div>
       </div>
     `;
@@ -2314,7 +2754,13 @@ function renderSettingsTab() {
       toggleGpsText.style.color = toggleGps.checked ? '#34d399' : '#f87171';
     }
   }
-  if (gpsInterval) gpsInterval.value = currentDevice.gpsIntervalSeconds || 30;
+  if (gpsInterval) gpsInterval.value = currentDevice.gpsIntervalSeconds || 600;
+
+  const settingsAudioDuration = document.getElementById('settingsAudioDuration');
+  const settingsVideoDuration = document.getElementById('settingsVideoDuration');
+  if (settingsAudioDuration) settingsAudioDuration.value = String(currentDevice.audioClipDurationSeconds || 5);
+  if (settingsVideoDuration) settingsVideoDuration.value = String(currentDevice.videoClipDurationSeconds || 5);
+  updateMediaDurationLabels();
 
   if (limitRange) {
     limitRange.value = currentDevice.dailyLimitMinutes || 120;
@@ -2400,6 +2846,7 @@ window.goToBillingSettings = function() {
 // Event Bindings
 function bindEvents() {
   try {
+  setupHistoryTabFilters();
   // Modular Navigation Tabs (Desktop & Drawer)
   document.querySelectorAll('[data-view]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2487,11 +2934,55 @@ function bindEvents() {
   const btnMapTabRouteHistory = document.getElementById('btnMapTabRouteHistory');
   if (btnMapTabRouteHistory) btnMapTabRouteHistory.addEventListener('click', toggleRouteHistory);
 
+  // Sincronización y eventos de Día de Traza de Ruta
+  const selectRouteHistoryDay = document.getElementById('selectRouteHistoryDay');
+  const inputRouteHistoryDate = document.getElementById('inputRouteHistoryDate');
+  const selectRouteHistoryDayHome = document.getElementById('selectRouteHistoryDayHome');
+  const inputRouteHistoryDateHome = document.getElementById('inputRouteHistoryDateHome');
+
+  function handleRouteDayChange(val, customDateVal) {
+    let dateToFetch = val;
+    if (val === 'custom') {
+      dateToFetch = customDateVal || new Date().toISOString().slice(0, 10);
+    }
+    selectedRouteDate = dateToFetch;
+
+    if (selectRouteHistoryDay) selectRouteHistoryDay.value = val;
+    if (selectRouteHistoryDayHome) selectRouteHistoryDayHome.value = val;
+
+    if (inputRouteHistoryDate) inputRouteHistoryDate.style.display = (val === 'custom') ? 'inline-block' : 'none';
+    if (inputRouteHistoryDateHome) inputRouteHistoryDateHome.style.display = (val === 'custom') ? 'inline-block' : 'none';
+
+    if (isRouteHistoryVisible) {
+      fetchAndRenderRouteHistory(dateToFetch);
+    } else {
+      toggleRouteHistory();
+    }
+  }
+
+  if (selectRouteHistoryDay) {
+    selectRouteHistoryDay.addEventListener('change', (e) => {
+      handleRouteDayChange(e.target.value, inputRouteHistoryDate?.value);
+    });
+  }
+  if (selectRouteHistoryDayHome) {
+    selectRouteHistoryDayHome.addEventListener('change', (e) => {
+      handleRouteDayChange(e.target.value, inputRouteHistoryDateHome?.value);
+    });
+  }
+  if (inputRouteHistoryDate) {
+    inputRouteHistoryDate.addEventListener('change', (e) => {
+      handleRouteDayChange('custom', e.target.value);
+    });
+  }
+  if (inputRouteHistoryDateHome) {
+    inputRouteHistoryDateHome.addEventListener('change', (e) => {
+      handleRouteDayChange('custom', e.target.value);
+    });
+  }
+
   const btnMapTabGeofences = document.getElementById('btnMapTabGeofences');
-  if (btnMapTabGeofences) btnMapTabGeofences.addEventListener('click', () => {
-    fetchAndRenderGeofences();
-    showToast('Geocercas actualizadas en el mapa', 'info');
-  });
+  if (btnMapTabGeofences) btnMapTabGeofences.addEventListener('click', toggleGeofencesVisibility);
 
   // Sidebar Navigation (Opción 2)
   const sidebarNavItems = document.querySelectorAll('.dashboard-sidebar .sidebar-nav-item');
@@ -2585,8 +3076,10 @@ function bindEvents() {
       const catName = btn.dataset.name || 'Lugar Seguro';
       const catIcon = btn.dataset.icon || '📍';
       const nameInput = document.getElementById('inputGeofenceName');
+      const iconSelect = document.getElementById('selectGeofenceIcon');
+      if (iconSelect) iconSelect.value = catIcon;
       if (nameInput) {
-        nameInput.value = `${catName} ${catIcon}`;
+        nameInput.value = catName;
       }
     });
   });
@@ -2733,6 +3226,21 @@ function bindEvents() {
         const headerPinDisplay = document.getElementById('headerPinDisplay');
         if (headerPinDisplay) headerPinDisplay.textContent = pin;
         showToast('✅ PIN parental actualizado con éxito', 'success');
+      }
+    });
+  }
+
+  const btnSaveMediaDurationSettings = document.getElementById('btnSaveMediaDurationSettings');
+  if (btnSaveMediaDurationSettings) {
+    btnSaveMediaDurationSettings.addEventListener('click', async () => {
+      const audioSec = parseInt(document.getElementById('settingsAudioDuration')?.value, 10) || 5;
+      const videoSec = parseInt(document.getElementById('settingsVideoDuration')?.value, 10) || 5;
+      if (currentDevice) {
+        currentDevice.audioClipDurationSeconds = audioSec;
+        currentDevice.videoClipDurationSeconds = videoSec;
+        await updateRemoteConfig({ audioClipDurationSeconds: audioSec, videoClipDurationSeconds: videoSec });
+        updateMediaDurationLabels();
+        showToast(`✅ Duraciones configuradas: Audio (${audioSec}s), Video (${videoSec}s)`, 'success');
       }
     });
   }
@@ -2995,12 +3503,17 @@ function bindEvents() {
       showToast('No hay ningún dispositivo seleccionado', 'warning');
       return;
     }
-    const newLockState = !currentDevice.isLocked;
-    updateRemoteConfig({
-      isLocked: newLockState,
-      lockReason: newLockState ? 'Bloqueo inmediato solicitado por los padres' : ''
-    });
-    showToast(newLockState ? 'Teléfono del hijo bloqueado remotamente' : 'Teléfono del hijo desbloqueado', newLockState ? 'warning' : 'success');
+    toggleDeviceLockById(currentDevice.id);
+  });
+
+  // Botón Directo de Bloqueo / Desbloqueo en Tiempo de Pantalla
+  const btnHeroScreenTimeLock = document.getElementById('btnHeroScreenTimeLock');
+  if (btnHeroScreenTimeLock) btnHeroScreenTimeLock.addEventListener('click', () => {
+    if (!currentDevice) {
+      showToast('No hay ningún dispositivo seleccionado', 'warning');
+      return;
+    }
+    toggleDeviceLockById(currentDevice.id);
   });
 
   // Quick block active app
@@ -3015,9 +3528,31 @@ function bindEvents() {
   // Bonus time
   if (btnAddBonusTime) btnAddBonusTime.addEventListener('click', () => {
     if (!currentDevice) return;
-    const newLimit = currentDevice.dailyLimitMinutes + 15;
-    updateRemoteConfig({ dailyLimitMinutes: newLimit });
-    showToast('Se otorgaron +15 minutos de tiempo de pantalla extra', 'success');
+    const used = currentDevice.screenTimeTodayMinutes || 0;
+    const currentLimit = currentDevice.dailyLimitMinutes || 120;
+    const newLimit = Math.max(currentLimit + 15, used + 15);
+    currentDevice.dailyLimitMinutes = newLimit;
+
+    const payload = { dailyLimitMinutes: newLimit };
+    currentDevice.isLocked = false;
+    currentDevice.lockReason = '';
+    payload.isLocked = false;
+    payload.lockReason = '';
+    updateLockUI(false);
+    devicesList.forEach(d => {
+      if (d.id === currentDevice.id) {
+        d.isLocked = false;
+        d.dailyLimitMinutes = newLimit;
+        d.lockReason = '';
+      }
+    });
+    renderFamilyOverviewCards();
+
+    updateRemoteConfig(payload);
+    renderHero();
+    renderScheduleControls();
+    renderAppList();
+    showToast(`Se otorgaron +15 minutos de tiempo de pantalla extra • Dispositivo desbloqueado`, 'success');
   });
 
   // Range slider
@@ -3028,8 +3563,29 @@ function bindEvents() {
 
   if (dailyLimitRange) dailyLimitRange.addEventListener('change', (e) => {
     const mins = parseInt(e.target.value, 10);
-    updateRemoteConfig({ dailyLimitMinutes: mins });
-    showToast(`Nuevo límite diario: ${formatMinutes(mins)}`, 'success');
+    currentDevice.dailyLimitMinutes = mins;
+
+    const payload = { dailyLimitMinutes: mins };
+    const hasRemaining = (currentDevice.screenTimeTodayMinutes || 0) < mins;
+    if (hasRemaining && currentDevice.isLocked) {
+      currentDevice.isLocked = false;
+      currentDevice.lockReason = '';
+      payload.isLocked = false;
+      payload.lockReason = '';
+      updateLockUI(false);
+      devicesList.forEach(d => {
+        if (d.id === currentDevice.id) {
+          d.isLocked = false;
+          d.dailyLimitMinutes = mins;
+        }
+      });
+      renderFamilyOverviewCards();
+    }
+
+    updateRemoteConfig(payload);
+    renderHero();
+    renderScheduleControls();
+    showToast(`Nuevo límite diario: ${formatMinutes(mins)}${hasRemaining && payload.isLocked === false ? ' • Dispositivo desbloqueado' : ''}`, 'success');
   });
 
   // Bedtime toggle
@@ -3067,9 +3623,23 @@ function bindEvents() {
   if (btnSimUnlockPin) btnSimUnlockPin.addEventListener('click', () => {
     const entered = simPinInput.value.trim();
     if (entered === currentDevice.parentPin) {
-      updateRemoteConfig({ isLocked: false });
+      const used = currentDevice.screenTimeTodayMinutes || 0;
+      const limit = currentDevice.dailyLimitMinutes || 120;
+      const hasNoTime = limit > 0 && used >= limit;
+      const payload = { isLocked: false, lockReason: '' };
+      if (hasNoTime) {
+        payload.dailyLimitMinutes = Math.max(limit + 15, used + 15);
+        currentDevice.dailyLimitMinutes = payload.dailyLimitMinutes;
+      }
+      currentDevice.isLocked = false;
+      currentDevice.lockReason = '';
+      updateLockUI(false);
+      updateRemoteConfig(payload);
       simPinInput.value = '';
-      showToast('Desbloqueado con PIN de padres en el dispositivo', 'success');
+      renderHero();
+      renderScheduleControls();
+      renderAppList();
+      showToast('Desbloqueado con PIN de padres en el dispositivo' + (hasNoTime ? ' (+15 min de uso otorgados)' : ''), 'success');
     } else {
       showToast('PIN incorrecto. Intenta de nuevo.', 'danger');
       simPinInput.value = '';
@@ -3634,14 +4204,19 @@ async function requestVideo5s() {
     openPairingQrModal();
     return;
   }
-  if (btnCaptureVideoText) btnCaptureVideoText.textContent = 'Grabando 5s...';
+  const vidSec = currentDevice.videoClipDurationSeconds || 5;
+  if (btnCaptureVideoText) btnCaptureVideoText.textContent = `Grabando ${vidSec}s...`;
   if (btnCaptureVideoIcon) btnCaptureVideoIcon.textContent = '⏳';
-  showToast('🎥 Solicitando ráfaga de video de 5s al móvil...', 'info');
+  showToast(`🎥 Solicitando clip de video en vivo (${vidSec}s) al móvil...`, 'info');
 
   try {
-    const res = await fetch(`/api/devices/${currentDevice.id}/request-video`, { method: 'POST' });
+    const res = await fetch(`/api/devices/${currentDevice.id}/request-video`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ duration: vidSec })
+    });
     if (res.ok) {
-      console.log('Petición de clip de video de 5 segundos enviada');
+      console.log(`Petición de clip de video de ${vidSec} segundos enviada`);
       [2000, 4000, 6500, 9000].forEach(ms => {
         setTimeout(() => {
           if (typeof fetchAndRenderMultimediaGallery === 'function') {
@@ -3651,15 +4226,15 @@ async function requestVideo5s() {
       });
     }
   } catch (err) {
-    console.error('Error solicitando video de 5 segundos', err);
+    console.error('Error solicitando video', err);
     showToast('Error al solicitar video', 'danger');
   } finally {
     setTimeout(() => {
-      if (btnCaptureVideoText && btnCaptureVideoText.textContent === 'Grabando 5s...') {
-        btnCaptureVideoText.textContent = 'Video (5s)';
+      if (btnCaptureVideoText && btnCaptureVideoText.textContent.includes('Grabando')) {
+        btnCaptureVideoText.textContent = `Video (${vidSec}s)`;
         if (btnCaptureVideoIcon) btnCaptureVideoIcon.textContent = '🎥';
       }
-    }, 10000);
+    }, (vidSec + 5) * 1000);
   }
 }
 
@@ -3763,6 +4338,7 @@ async function requestAudio5s() {
   }
   isAudioRecordingRequested = true;
 
+  const audSec = currentDevice.audioClipDurationSeconds || 5;
   const btnCaptureAudioText = document.getElementById('btnCaptureAudioText');
   const btnCaptureAudioIcon = document.getElementById('btnCaptureAudioIcon');
   const btnAudioActionText = document.getElementById('btnAudioActionText');
@@ -3770,9 +4346,9 @@ async function requestAudio5s() {
   const audioVisualizerBox = document.getElementById('audioVisualizerBox');
   const audioStatusText = document.getElementById('audioStatusText');
 
-  if (btnCaptureAudioText) btnCaptureAudioText.textContent = 'Grabando 5s...';
+  if (btnCaptureAudioText) btnCaptureAudioText.textContent = `Grabando ${audSec}s...`;
   if (btnCaptureAudioIcon) btnCaptureAudioIcon.textContent = '⏳';
-  if (btnAudioActionText) btnAudioActionText.textContent = 'Grabando (5s)...';
+  if (btnAudioActionText) btnAudioActionText.textContent = `Grabando (${audSec}s)...`;
   if (btnAudioActionIcon) btnAudioActionIcon.textContent = '⏳';
 
   if (audioVisualizerBox) {
@@ -3780,15 +4356,19 @@ async function requestAudio5s() {
     audioVisualizerBox.classList.remove('playing');
   }
   if (audioStatusText) {
-    audioStatusText.innerHTML = '🎙️ <strong>Grabando audio ambiente en el móvil de ' + (currentDevice.childName || currentDevice.name) + '...</strong> Esperando transmisión (5s).';
+    audioStatusText.innerHTML = `🎙️ <strong>Grabando audio ambiente en el móvil de ${currentDevice.childName || currentDevice.name}...</strong> Esperando transmisión (${audSec}s).`;
   }
 
-  showToast('🎙️ Solicitando 5 segundos de audio ambiente en vivo...', 'info');
+  showToast(`🎙️ Solicitando ${audSec} segundos de audio ambiente en vivo...`, 'info');
 
   try {
-    const res = await fetch(`/api/devices/${currentDevice.id}/request-audio`, { method: 'POST' });
+    const res = await fetch(`/api/devices/${currentDevice.id}/request-audio`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ duration: audSec })
+    });
     if (res.ok) {
-      console.log('Petición de audio ambiental de 5 segundos enviada');
+      console.log(`Petición de audio ambiental de ${audSec} segundos enviada`);
       [2000, 4000, 6500, 9000].forEach(ms => {
         setTimeout(() => {
           if (typeof fetchAndRenderMultimediaGallery === 'function') {
@@ -3801,20 +4381,20 @@ async function requestAudio5s() {
     console.error('Error solicitando audio ambiental', err);
     showToast('Error al solicitar audio ambiental', 'danger');
   } finally {
-    // Timeout de reseteo si no responde en 12 segundos
+    // Timeout de reseteo si no responde
     setTimeout(() => {
       if (isAudioRecordingRequested) {
         isAudioRecordingRequested = false;
-        if (btnCaptureAudioText) btnCaptureAudioText.textContent = 'Audio (5s)';
+        if (btnCaptureAudioText) btnCaptureAudioText.textContent = `Audio (${audSec}s)`;
         if (btnCaptureAudioIcon) btnCaptureAudioIcon.textContent = '🎙️';
-        if (btnAudioActionText) btnAudioActionText.textContent = 'Escuchar en Directo (5s)';
+        if (btnAudioActionText) btnAudioActionText.textContent = `Escuchar en Directo (${audSec}s)`;
         if (btnAudioActionIcon) btnAudioActionIcon.textContent = '🎙️';
         if (audioVisualizerBox) audioVisualizerBox.classList.remove('recording');
         if (audioStatusText && !audioStatusText.innerHTML.includes('Reproduciendo')) {
-          audioStatusText.textContent = 'Micrófono listo. Pulsa el botón para solicitar 5 segundos de audio.';
+          audioStatusText.textContent = `Micrófono listo. Pulsa el botón para solicitar ${audSec} segundos de audio.`;
         }
       }
-    }, 12000);
+    }, (audSec + 7) * 1000);
   }
 }
 
@@ -3910,6 +4490,29 @@ function clearGeofencesFromMap() {
   dedicatedGeofencesLayers = [];
 }
 
+function getGeofenceIcon(geo) {
+  if (geo.icon && geo.icon.trim()) return geo.icon.trim();
+  const emojiMatch = (geo.name || '').match(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u);
+  if (emojiMatch) return emojiMatch[0];
+  const lower = (geo.name || '').toLowerCase();
+  if (lower.includes('colegio') || lower.includes('escuela')) return '🏫';
+  if (lower.includes('casa') || lower.includes('hogar')) return '🏠';
+  if (lower.includes('deporte') || lower.includes('cancha') || lower.includes('club') || lower.includes('futbol')) return '⚽';
+  if (lower.includes('abuelo') || lower.includes('abuela')) return '👵';
+  if (lower.includes('parque') || lower.includes('plaza')) return '🌳';
+  if (lower.includes('biblioteca')) return '📚';
+  if (lower.includes('mall') || lower.includes('tienda') || lower.includes('comercial')) return '🛒';
+  return '📍';
+}
+
+function getGeofenceCleanName(geo, icon) {
+  let name = (geo.name || 'Lugar Seguro').trim();
+  if (icon) {
+    name = name.replace(icon, '').trim();
+  }
+  return name || 'Lugar Seguro';
+}
+
 function renderGeofencesOnMap(geofences) {
   clearGeofencesFromMap();
   if (!areGeofencesVisible || !Array.isArray(geofences)) return;
@@ -3918,6 +4521,24 @@ function renderGeofencesOnMap(geofences) {
     const isSchool = geo.name.toLowerCase().includes('colegio') || geo.name.toLowerCase().includes('escuela');
     const isHome = geo.name.toLowerCase().includes('casa') || geo.name.toLowerCase().includes('hogar');
     const color = isSchool ? '#3b82f6' : (isHome ? '#10b981' : '#f59e0b');
+    const icon = getGeofenceIcon(geo);
+    const cleanName = getGeofenceCleanName(geo, icon);
+    const badgeType = isSchool ? 'type-school' : (isHome ? 'type-home' : 'type-other');
+
+    const badgeHtml = `
+      <div class="geofence-map-badge ${badgeType}">
+        <span class="geofence-map-badge-icon">${icon}</span>
+        <span class="geofence-map-badge-label">${cleanName}</span>
+      </div>
+    `;
+    const markerIcon = L.divIcon({
+      className: 'geofence-map-badge-wrapper',
+      html: badgeHtml,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0]
+    });
+
+    const popupContent = `<b>${icon} ${cleanName}</b><br>Radio seguro: ${geo.radiusMeters || 200}m<br><span style="font-size:0.75rem; color:#94a3b8;">Alertas activas: Entrada y Salida</span>`;
 
     // Dibujar en mapa de resumen
     if (leafletMap) {
@@ -3930,8 +4551,12 @@ function renderGeofencesOnMap(geofences) {
         dashArray: '4, 4'
       }).addTo(leafletMap);
 
-      circle.bindPopup(`<b>${geo.name}</b><br>Radio seguro: ${geo.radiusMeters}m<br><span style="font-size:0.75rem; color:#94a3b8;">Alertas activas: Entrada y Salida</span>`);
+      const marker = L.marker([geo.latitude, geo.longitude], { icon: markerIcon }).addTo(leafletMap);
+
+      circle.bindPopup(popupContent);
+      marker.bindPopup(popupContent);
       leafletGeofencesLayers.push(circle);
+      leafletGeofencesLayers.push(marker);
     }
 
     // Dibujar en mapa dedicado
@@ -3945,8 +4570,12 @@ function renderGeofencesOnMap(geofences) {
         dashArray: '4, 4'
       }).addTo(dedicatedLeafletMap);
 
-      circleDedicated.bindPopup(`<b>${geo.name}</b><br>Radio seguro: ${geo.radiusMeters}m<br><span style="font-size:0.75rem; color:#94a3b8;">Alertas activas: Entrada y Salida</span>`);
+      const markerDedicated = L.marker([geo.latitude, geo.longitude], { icon: markerIcon }).addTo(dedicatedLeafletMap);
+
+      circleDedicated.bindPopup(popupContent);
+      markerDedicated.bindPopup(popupContent);
       dedicatedGeofencesLayers.push(circleDedicated);
+      dedicatedGeofencesLayers.push(markerDedicated);
     }
   });
 }
@@ -3960,13 +4589,15 @@ function toggleGeofencesVisibility() {
   const btnMapTabGeofences = document.getElementById('btnMapTabGeofences');
   if (btnMapTabGeofences) {
     btnMapTabGeofences.style.opacity = areGeofencesVisible ? '1' : '0.6';
+    btnMapTabGeofences.innerHTML = areGeofencesVisible ? '👁️ Ocultar Círculos' : '👁️ Círculos';
+    btnMapTabGeofences.title = areGeofencesVisible ? 'Ocultar círculos de zonas seguras' : 'Mostrar círculos de zonas seguras';
   }
   if (areGeofencesVisible) {
     fetchAndRenderGeofences();
     showToast('🏫 Mostrando zonas seguras y geocercas en el mapa', 'info');
   } else {
     clearGeofencesFromMap();
-    showToast('Zonas seguras ocultadas', 'info');
+    showToast('Zonas seguras ocultadas del mapa', 'info');
   }
 }
 
@@ -4038,16 +4669,15 @@ function renderGeofencesListInModal(geofences) {
   }
 
   listContainer.innerHTML = geofences.map(geo => {
-    const isSchool = geo.name.toLowerCase().includes('colegio') || geo.name.toLowerCase().includes('escuela');
-    const isHome = geo.name.toLowerCase().includes('casa') || geo.name.toLowerCase().includes('hogar');
-    const icon = isSchool ? '🏫' : (isHome ? '🏠' : (geo.name.includes('⚽') ? '⚽' : (geo.name.includes('👵') ? '👵' : '📍')));
+    const icon = getGeofenceIcon(geo);
+    const cleanName = getGeofenceCleanName(geo, icon);
     
     return `
       <div class="geofence-saved-item" id="geoItem-${geo.id}">
         <div class="geofence-item-meta">
           <div class="geofence-item-icon">${icon}</div>
           <div>
-            <h5 class="geofence-item-name">${geo.name}</h5>
+            <h5 class="geofence-item-name">${icon} ${cleanName}</h5>
             <p class="geofence-item-sub">Radio: ${geo.radiusMeters || 200}m • Coords: ${Number(geo.latitude).toFixed(4)}, ${Number(geo.longitude).toFixed(4)}</p>
           </div>
         </div>
@@ -4123,9 +4753,13 @@ async function saveNewGeofence() {
   if (hasMissingField) return;
 
   try {
+    const iconSelect = document.getElementById('selectGeofenceIcon');
+    const icon = iconSelect ? iconSelect.value : '📍';
+
     const payload = {
       id: `GEO-${Date.now()}`,
       name,
+      icon,
       latitude: lat,
       longitude: lng,
       radiusMeters: radius,
@@ -4171,8 +4805,6 @@ async function saveNewGeofence() {
 
 async function deleteGeofenceItem(geoId) {
   if (!currentDevice) return;
-  const confirmDelete = window.confirm('¿Deseas eliminar este lugar seguro?');
-  if (!confirmDelete) return;
 
   const itemEl = document.getElementById(`geoItem-${geoId}`);
   if (itemEl) {
@@ -4186,8 +4818,9 @@ async function deleteGeofenceItem(geoId) {
     });
 
     if (res.ok) {
+      if (itemEl) itemEl.remove();
       if (Array.isArray(modalGeofencesList)) {
-        modalGeofencesList = modalGeofencesList.filter(g => g.id !== geoId);
+        modalGeofencesList = modalGeofencesList.filter(g => String(g.id) !== String(geoId));
         renderGeofencesListInModal(modalGeofencesList);
       }
       showToast('🗑️ Lugar eliminado correctamente', 'info');
@@ -4195,7 +4828,6 @@ async function deleteGeofenceItem(geoId) {
       if (typeof fetchAndRenderGeofences === 'function') {
         fetchAndRenderGeofences();
       }
-      await loadAndRenderGeofencesInModal();
     } else {
       if (itemEl) {
         itemEl.style.opacity = '1';
@@ -4212,6 +4844,7 @@ async function deleteGeofenceItem(geoId) {
     showToast('Error de conexión al eliminar', 'danger');
   }
 }
+window.deleteGeofenceItem = deleteGeofenceItem;
 
 // ----------------------------------------------------------------
 // Sincronización de Selectores Contextuales de Hijo
@@ -4259,29 +4892,64 @@ function syncChildContextSelectors() {
   }
 }
 
+// Variable global de día seleccionado para la traza
+let selectedRouteDate = 'today';
+
+function updateMediaDurationLabels() {
+  const audSec = currentDevice?.audioClipDurationSeconds || 5;
+  const vidSec = currentDevice?.videoClipDurationSeconds || 5;
+
+  const btnCaptureVideoText = document.getElementById('btnCaptureVideoText');
+  if (btnCaptureVideoText && !btnCaptureVideoText.textContent.includes('Grabando')) {
+    btnCaptureVideoText.textContent = `Video (${vidSec}s)`;
+  }
+
+  const btnCaptureAudioText = document.getElementById('btnCaptureAudioText');
+  if (btnCaptureAudioText && !btnCaptureAudioText.textContent.includes('Grabando')) {
+    btnCaptureAudioText.textContent = `Audio (${audSec}s)`;
+  }
+
+  const btnAudioActionText = document.getElementById('btnAudioActionText');
+  if (btnAudioActionText && !btnAudioActionText.textContent.includes('Grabando')) {
+    btnAudioActionText.textContent = `Escuchar en Directo (${audSec}s)`;
+  }
+
+  const btnMultiTabCaptureVideo = document.getElementById('btnMultiTabCaptureVideo');
+  if (btnMultiTabCaptureVideo) btnMultiTabCaptureVideo.textContent = `🎥 Grabar Video (${vidSec}s)`;
+
+  const btnMultiTabCaptureAudio = document.getElementById('btnMultiTabCaptureAudio');
+  if (btnMultiTabCaptureAudio) btnMultiTabCaptureAudio.textContent = `🎙️ Escuchar Audio (${audSec}s)`;
+}
+
 // Route History Tracking (GPS Path)
 function toggleRouteHistory() {
   isRouteHistoryVisible = !isRouteHistoryVisible;
   const btnRouteHistoryText = document.getElementById('btnRouteHistoryText');
+  const btnMapTabRouteHistory = document.getElementById('btnMapTabRouteHistory');
 
   if (isRouteHistoryVisible) {
     if (routeHistoryPanel) routeHistoryPanel.style.display = 'block';
     if (btnRouteHistoryText) btnRouteHistoryText.textContent = 'Ocultar Ruta';
+    if (btnMapTabRouteHistory) btnMapTabRouteHistory.textContent = '🗺️ Ocultar Ruta';
     fetchAndRenderRouteHistory();
     showToast('🗺️ Trazando línea de ruta histórica del dispositivo', 'info');
   } else {
     if (routeHistoryPanel) routeHistoryPanel.style.display = 'none';
     if (btnRouteHistoryText) btnRouteHistoryText.textContent = 'Trazar Ruta';
+    if (btnMapTabRouteHistory) btnMapTabRouteHistory.textContent = '🗺️ Trazar Ruta';
     clearRouteHistoryFromMap();
   }
 }
 
-async function fetchAndRenderRouteHistory() {
+async function fetchAndRenderRouteHistory(dateOverride) {
+  if (!currentDevice) return;
+  const dateParam = dateOverride || selectedRouteDate || 'today';
+
   try {
-    const res = await fetch(`/api/devices/${currentDevice.id}/location-history`);
+    const res = await fetch(`/api/devices/${currentDevice.id}/location-history?date=${encodeURIComponent(dateParam)}&limit=1000`);
     if (res.ok) {
       const history = await res.json();
-      renderRouteHistoryOnMap(history);
+      renderRouteHistoryOnMap(history, dateParam);
       return;
     }
   } catch (err) {
@@ -4289,8 +4957,10 @@ async function fetchAndRenderRouteHistory() {
   }
 
   // Fallback si no hay historial aún: crear un punto con la posición actual
-  if (currentDevice.location && currentDevice.location.latitude) {
-    renderRouteHistoryOnMap([currentDevice.location]);
+  if ((dateParam === 'today' || dateParam === new Date().toISOString().slice(0, 10)) && currentDevice.location && currentDevice.location.latitude) {
+    renderRouteHistoryOnMap([currentDevice.location], dateParam);
+  } else {
+    renderRouteHistoryOnMap([], dateParam);
   }
 }
 
@@ -4310,45 +4980,70 @@ function clearRouteHistoryFromMap() {
   dedicatedRouteMarkers = [];
 }
 
-function renderRouteHistoryOnMap(points) {
+function renderRouteHistoryOnMap(points, dateLabel = 'today') {
   clearRouteHistoryFromMap();
+  const dayName = dateLabel === 'today' ? 'hoy' : dateLabel === 'yesterday' ? 'ayer' : dateLabel;
+
   if (!points || !points.length) {
     if (routeHistoryItemsList) {
-      routeHistoryItemsList.innerHTML = '<div style="color: var(--text-muted); font-size: 0.78rem;">No hay registros de ruta previos para hoy.</div>';
+      routeHistoryItemsList.innerHTML = `<div style="color: var(--text-muted); font-size: 0.78rem;">No hay registros de ruta GPS para ${dayName}.</div>`;
     }
     if (routePointsCountBadge) routePointsCountBadge.textContent = '0 posiciones';
     return;
   }
 
+  // Calcular distancia total aproximada
+  let totalDistMeters = 0;
+  for (let i = 1; i < points.length; i++) {
+    if (typeof points[i-1].latitude === 'number' && typeof points[i].latitude === 'number') {
+      totalDistMeters += calculateDistanceMetersClient(points[i-1].latitude, points[i-1].longitude, points[i].latitude, points[i].longitude);
+    }
+  }
+  const distStr = totalDistMeters >= 1000 ? `${(totalDistMeters / 1000).toFixed(2)} km` : `${Math.round(totalDistMeters)} m`;
+
   if (routePointsCountBadge) {
-    routePointsCountBadge.textContent = `${points.length} puntos registrados`;
+    routePointsCountBadge.textContent = `${points.length} puntos (${distStr})`;
   }
 
-  const latlngs = points
-    .filter(p => typeof p.latitude === 'number' && typeof p.longitude === 'number')
-    .map(p => [p.latitude, p.longitude]);
+  const validPoints = points.filter(p => typeof p.latitude === 'number' && typeof p.longitude === 'number');
+  const latlngs = validPoints.map(p => [p.latitude, p.longitude]);
 
   if (latlngs.length >= 2 && typeof L !== 'undefined') {
+    const startPoint = latlngs[0];
+    const endPoint = latlngs[latlngs.length - 1];
+    const startTimeStr = validPoints[0].timestamp ? new Date(validPoints[0].timestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '';
+    const endTimeStr = validPoints[validPoints.length - 1].timestamp ? new Date(validPoints[validPoints.length - 1].timestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '';
+
     // Trazar en mapa de resumen
     if (leafletMap) {
       leafletRoutePolyline = L.polyline(latlngs, {
         color: '#10b981',
         weight: 4,
-        opacity: 0.85,
+        opacity: 0.9,
         dashArray: '6, 8',
         lineCap: 'round'
       }).addTo(leafletMap);
 
-      const startPoint = latlngs[0];
       const startMarker = L.circleMarker(startPoint, {
-        radius: 6,
-        fillColor: '#60a5fa',
+        radius: 7,
+        fillColor: '#3b82f6',
         color: '#ffffff',
         weight: 2,
         opacity: 1,
-        fillOpacity: 0.9
-      }).addTo(leafletMap).bindPopup('🏁 Inicio de recorrido');
+        fillOpacity: 1
+      }).addTo(leafletMap).bindPopup(`<b>🏁 Inicio del día (${dayName})</b><br>${startTimeStr ? 'Hora: ' + startTimeStr : ''}`);
       leafletRouteMarkers.push(startMarker);
+
+      const endMarker = L.circleMarker(endPoint, {
+        radius: 7,
+        fillColor: '#ef4444',
+        color: '#ffffff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 1
+      }).addTo(leafletMap).bindPopup(`<b>📍 Fin / Posición final</b><br>${endTimeStr ? 'Hora: ' + endTimeStr : ''}`);
+      leafletRouteMarkers.push(endMarker);
+
       leafletMap.fitBounds(leafletRoutePolyline.getBounds(), { padding: [30, 30] });
     }
 
@@ -4357,21 +5052,31 @@ function renderRouteHistoryOnMap(points) {
       dedicatedRoutePolyline = L.polyline(latlngs, {
         color: '#10b981',
         weight: 4,
-        opacity: 0.85,
+        opacity: 0.9,
         dashArray: '6, 8',
         lineCap: 'round'
       }).addTo(dedicatedLeafletMap);
 
-      const startPoint = latlngs[0];
       const startMarkerDed = L.circleMarker(startPoint, {
-        radius: 6,
-        fillColor: '#60a5fa',
+        radius: 7,
+        fillColor: '#3b82f6',
         color: '#ffffff',
         weight: 2,
         opacity: 1,
-        fillOpacity: 0.9
-      }).addTo(dedicatedLeafletMap).bindPopup('🏁 Inicio de recorrido');
+        fillOpacity: 1
+      }).addTo(dedicatedLeafletMap).bindPopup(`<b>🏁 Inicio del día (${dayName})</b><br>${startTimeStr ? 'Hora: ' + startTimeStr : ''}`);
       dedicatedRouteMarkers.push(startMarkerDed);
+
+      const endMarkerDed = L.circleMarker(endPoint, {
+        radius: 7,
+        fillColor: '#ef4444',
+        color: '#ffffff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 1
+      }).addTo(dedicatedLeafletMap).bindPopup(`<b>📍 Fin / Posición final</b><br>${endTimeStr ? 'Hora: ' + endTimeStr : ''}`);
+      dedicatedRouteMarkers.push(endMarkerDed);
+
       dedicatedLeafletMap.fitBounds(dedicatedRoutePolyline.getBounds(), { padding: [30, 30] });
     }
   }
@@ -4380,7 +5085,7 @@ function renderRouteHistoryOnMap(points) {
   if (routeHistoryItemsList) {
     routeHistoryItemsList.innerHTML = '';
     const reversed = [...points].reverse(); // Más recientes primero
-    reversed.slice(0, 10).forEach((pt, idx) => {
+    reversed.slice(0, 15).forEach((pt) => {
       const item = document.createElement('div');
       item.className = 'route-point-item';
       const timeStr = pt.timestamp ? new Date(pt.timestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'Reciente';
@@ -5551,8 +6256,9 @@ function setupWebSocket() {
           currentDevice.activityLog.unshift(data.payload.event);
           if (currentDevice.activityLog.length > 50) currentDevice.activityLog.pop();
           renderActivityFeed();
+          renderHistoryTab();
           playAlertSound();
-          if (data.payload.event.type === 'blocked' || data.payload.event.type === 'gps_alert') {
+          if (data.payload.event.type === 'blocked' || data.payload.event.type === 'warning' || data.payload.event.type === 'gps_alert') {
             triggerWebNotification('⚠️ Alerta KidsShield', data.payload.event.message);
           }
         } else if (data.type === 'CONFIG_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
@@ -5636,10 +6342,14 @@ function setupWebSocket() {
           if (btnLocationText) btnLocationText.textContent = 'Actualizar';
           if (btnLocationIcon) btnLocationIcon.textContent = '🔄';
 
-          showToast('📍 Ubicación GPS actualizada en el mapa', 'success');
+          if (isManualLocationRequest) {
+            showToast('📍 Ubicación GPS actualizada en el mapa', 'success');
+            isManualLocationRequest = false;
+          }
         } else if (data.type === 'PUSH_NOTIFICATION') {
           triggerWebNotification(data.payload.title || 'Alerta KidsShield', data.payload.body || 'Evento de seguridad detectado');
           showToast(data.payload.body, data.payload.type === 'alert' ? 'danger' : 'warning');
+          renderHistoryTab();
         }
       } catch (err) {
         console.error('Error parseando socket payload', err);
@@ -5653,6 +6363,14 @@ function setupWebSocket() {
     console.log('Modo standalone activo');
   }
 }
+
+// Sondeo y actualización en vivo del historial cuando la pestaña está visible
+setInterval(() => {
+  const historyTab = document.getElementById('tabViewHistory');
+  if (historyTab && !historyTab.classList.contains('hidden') && currentDevice) {
+    renderHistoryTab();
+  }
+}, 4000);
 
 // Request immediate screenshot from child device
 async function requestScreenshotNow() {

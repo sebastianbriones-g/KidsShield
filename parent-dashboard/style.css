@@ -4173,6 +4173,29 @@ body {
   color: #6ee7b7;
 }
 
+/* Ocultar botón bloquear en la tarjeta del hijo activo */
+.child-overview-card.is-active-device .btn-card-quick-lock {
+  display: none !important;
+}
+
+.child-overview-card.is-active-device .btn-card-view-screen {
+  flex: 1;
+  width: 100%;
+}
+
+/* Estilo para eventos GPS en Historial de Actividad */
+.activity-feed-item.gps {
+  border-left: 3px solid #38bdf8;
+  background: rgba(56, 189, 248, 0.05);
+}
+
+.btn-history-map-link:hover {
+  background: rgba(56, 189, 248, 0.25) !important;
+  color: #fff !important;
+  border-color: #38bdf8 !important;
+  transform: translateY(-1px);
+}
+
 /* Sección de Supervisión en Vivo en Resumen */
 .live-supervision-section {
   margin-top: 10px;
@@ -4853,3 +4876,180 @@ body {
   border-color: rgba(99, 102, 241, 0.4) !important;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
 }
+
+/* ==========================================================================
+   Etiquetas Visuales de Geocercas en el Mapa (Icono + Nombre)
+   ========================================================================== */
+.geofence-map-badge-wrapper {
+  background: transparent;
+  border: none;
+}
+
+.geofence-map-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1.5px solid #3b82f6;
+  border-radius: 20px;
+  padding: 4px 10px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 12px rgba(59, 130, 246, 0.35);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  transform: translate(-50%, -50%);
+}
+
+.geofence-map-badge:hover {
+  transform: translate(-50%, -54%) scale(1.06);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6), 0 0 16px rgba(59, 130, 246, 0.55);
+}
+
+.geofence-map-badge.type-school {
+  border-color: #3b82f6;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 10px rgba(59, 130, 246, 0.35);
+}
+
+.geofence-map-badge.type-home {
+  border-color: #10b981;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 10px rgba(16, 185, 129, 0.35);
+}
+
+.geofence-map-badge.type-other {
+  border-color: #f59e0b;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 10px rgba(245, 158, 11, 0.35);
+}
+
+.geofence-map-badge-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.geofence-map-badge-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: 0.2px;
+}
+
+/* Caja Unificada de Audio en el Visualizador (Micrófono Ambiental en Vivo) */
+.unified-audio-box {
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.88), rgba(30, 41, 59, 0.72));
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-top: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.3s ease;
+}
+
+.unified-audio-box.recording {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 18px rgba(16, 185, 129, 0.35);
+}
+
+.unified-audio-box.recording .soundwave-bar {
+  animation: soundwavePulse 0.5s ease-in-out infinite alternate;
+}
+
+.unified-audio-box.playing {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.35);
+}
+
+.unified-audio-box.playing .soundwave-bar {
+  animation: soundwaveAnim 0.7s ease-in-out infinite alternate;
+}
+
+.unified-audio-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 8px;
+}
+
+.unified-audio-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  gap: 8px;
+  text-align: center;
+}
+
+.unified-audio-player-wrap {
+  width: 100%;
+  margin-top: 4px;
+  display: flex;
+  justify-content: center;
+}
+
+.unified-audio-player-wrap audio,
+#audioAmbientPlayer {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 250px !important;
+  height: 44px !important;
+  border-radius: 24px;
+  outline: none;
+  display: block;
+  background: rgba(15, 23, 42, 0.95);
+}
+
+/* Botón de Bloqueo en Tarjeta de Tiempo de Pantalla */
+.btn-hero-lock {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 9px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.btn-hero-lock.is-unlocked {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.btn-hero-lock.is-unlocked:hover {
+  background: rgba(239, 68, 68, 0.28);
+  border-color: #ef4444;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.btn-hero-lock.is-locked {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.btn-hero-lock.is-locked:hover {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: #10b981;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+

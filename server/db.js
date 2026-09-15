@@ -209,6 +209,9 @@ async function initDb() {
       );
     `);
 
+    // Migración para columna icon en geocercas
+    try { await client.execute("ALTER TABLE geofences ADD COLUMN icon TEXT DEFAULT '📍'"); } catch (_) {}
+
     // 11. Password Resets (Recovery Tokens)
     await client.execute(`
       CREATE TABLE IF NOT EXISTS password_resets (
@@ -624,11 +627,34 @@ async function logLocation(deviceId, location, familyId = 'FAM-DEFAULT-01') {
   }
 }
 
-async function getLocationHistory(deviceId, limit = 50) {
+async function getLocationHistory(deviceId, limit = 50, date = null) {
   try {
+    let sql = `SELECT latitude, longitude, accuracy, address, created_at FROM locations WHERE device_id = ?`;
+    const args = [deviceId];
+
+    if (date) {
+      let targetDateStr = '';
+      if (date === 'today') {
+        targetDateStr = new Date().toISOString().slice(0, 10);
+      } else if (date === 'yesterday') {
+        const y = new Date();
+        y.setDate(y.getDate() - 1);
+        targetDateStr = y.toISOString().slice(0, 10);
+      } else if (typeof date === 'string' && date.length >= 10) {
+        targetDateStr = date.slice(0, 10);
+      }
+      if (targetDateStr) {
+        sql += ` AND created_at LIKE ?`;
+        args.push(`${targetDateStr}%`);
+      }
+    }
+
+    sql += ` ORDER BY id ASC LIMIT ?`;
+    args.push(limit);
+
     const rs = await client.execute({
-      sql: `SELECT latitude, longitude, accuracy, address, created_at FROM locations WHERE device_id = ? ORDER BY id DESC LIMIT ?`,
-      args: [deviceId, limit]
+      sql,
+      args
     });
     return rs.rows.map(r => ({
       latitude: r.latitude,
@@ -636,7 +662,7 @@ async function getLocationHistory(deviceId, limit = 50) {
       accuracy: r.accuracy,
       address: r.address,
       timestamp: r.created_at
-    })).reverse();
+    }));
   } catch (e) {
     console.error('[Database] Error leyendo historial GPS:', e);
     return [];
@@ -819,13 +845,14 @@ async function getScreenshots(deviceId, limit = 20) {
 async function saveGeofence(geofence) {
   try {
     await client.execute({
-      sql: `INSERT OR REPLACE INTO geofences (id, device_id, family_id, name, latitude, longitude, radius_meters, alert_on_entry, alert_on_exit, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      sql: `INSERT OR REPLACE INTO geofences (id, device_id, family_id, name, icon, latitude, longitude, radius_meters, alert_on_entry, alert_on_exit, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         geofence.id,
         geofence.deviceId || 'KID-PHONE-01',
         geofence.familyId || 'FAM-DEFAULT-01',
         geofence.name,
+        geofence.icon || '📍',
         geofence.latitude,
         geofence.longitude,
         geofence.radiusMeters || 200,
@@ -836,22 +863,51 @@ async function saveGeofence(geofence) {
     });
     return geofence;
   } catch (e) {
-    console.error('[Database] Error guardando geocerca:', e);
-    return null;
+    try {
+      await client.execute({
+        sql: `INSERT OR REPLACE INTO geofences (id, device_id, family_id, name, latitude, longitude, radius_meters, alert_on_entry, alert_on_exit, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          geofence.id,
+          geofence.deviceId || 'KID-PHONE-01',
+          geofence.familyId || 'FAM-DEFAULT-01',
+          geofence.name,
+          geofence.latitude,
+          geofence.longitude,
+          geofence.radiusMeters || 200,
+          geofence.alertOnEntry ? 1 : 0,
+          geofence.alertOnExit ? 1 : 0,
+          geofence.createdAt || new Date().toISOString()
+        ]
+      });
+      return geofence;
+    } catch (err2) {
+      console.error('[Database] Error guardando geocerca:', err2);
+      return null;
+    }
   }
 }
 
 async function getGeofences(deviceId) {
   try {
-    const rs = await client.execute({
-      sql: `SELECT id, device_id, family_id, name, latitude, longitude, radius_meters, alert_on_entry, alert_on_exit, created_at FROM geofences WHERE device_id = ?`,
-      args: [deviceId]
-    });
+    let rs;
+    try {
+      rs = await client.execute({
+        sql: `SELECT id, device_id, family_id, name, icon, latitude, longitude, radius_meters, alert_on_entry, alert_on_exit, created_at FROM geofences WHERE device_id = ?`,
+        args: [deviceId]
+      });
+    } catch (_) {
+      rs = await client.execute({
+        sql: `SELECT id, device_id, family_id, name, latitude, longitude, radius_meters, alert_on_entry, alert_on_exit, created_at FROM geofences WHERE device_id = ?`,
+        args: [deviceId]
+      });
+    }
     return rs.rows.map(r => ({
       id: r.id,
       deviceId: r.device_id,
       familyId: r.family_id,
       name: r.name,
+      icon: r.icon || '📍',
       latitude: r.latitude,
       longitude: r.longitude,
       radiusMeters: r.radius_meters,

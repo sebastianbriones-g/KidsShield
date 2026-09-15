@@ -541,6 +541,14 @@
             <span class="badge badge-accent" id="limitStatusBadge">🟢 Sin uso hoy</span>
             <button class="btn-bonus-time" id="btnAddBonusTime">+15 min de regalo</button>
           </div>
+
+          <!-- Botón Directo de Bloqueo / Desbloqueo en Tiempo de Pantalla -->
+          <div class="screentime-lock-action-wrap" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+            <button class="btn-hero-lock is-unlocked" id="btnHeroScreenTimeLock" title="Bloquear o desbloquear el teléfono del hijo de inmediato">
+              <span id="heroScreenTimeLockIcon">🔒</span>
+              <span id="heroScreenTimeLockText">Bloquear Teléfono Ahora</span>
+            </button>
+          </div>
         </div>
 
         <!-- Hero Card 2: Active App in Real Time -->
@@ -596,7 +604,7 @@
                 <button class="filter-pill" data-filter="Juegos">🎮 Juegos</button>
                 <button class="filter-pill" data-filter="Redes Sociales">💬 Redes</button>
                 <button class="filter-pill" data-filter="Videos">🎬 Videos</button>
-                <button class="filter-pill" data-filter="Navegadores">🌐 Web</button>
+                <button class="filter-pill" data-filter="Navegación Web">🌐 Web</button>
               </div>
             </div>
 
@@ -626,10 +634,18 @@
                   <span id="btnRefreshLocationIcon">🔄</span>
                   <span id="btnRefreshLocationText">Actualizar</span>
                 </button>
-                <button id="btnToggleRouteHistory" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 6px;" title="Trazar ruta del día">
-                  <span id="btnRouteHistoryIcon">🗺️</span>
-                  <span id="btnRouteHistoryText">Trazar Ruta</span>
-                </button>
+                <div style="display: inline-flex; align-items: center; gap: 4px;">
+                  <button id="btnToggleRouteHistory" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 6px;" title="Trazar ruta del día">
+                    <span id="btnRouteHistoryIcon">🗺️</span>
+                    <span id="btnRouteHistoryText">Trazar Ruta</span>
+                  </button>
+                  <select id="selectRouteHistoryDayHome" class="device-select-custom" style="font-size: 0.8rem; padding: 5px 8px;" title="Seleccionar día de la traza">
+                    <option value="today" selected>Hoy</option>
+                    <option value="yesterday">Ayer</option>
+                    <option value="custom">Fecha...</option>
+                  </select>
+                  <input type="date" id="inputRouteHistoryDateHome" style="display: none; background: #1e293b; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 3px 6px; font-size: 0.78rem;">
+                </div>
                 <button id="btnToggleGeofences" class="btn btn-secondary btn-sm" title="Zonas seguras (Colegio, Casa)">
                   <span>🏫 Geocercas</span>
                 </button>
@@ -765,71 +781,54 @@
                   </div>
                 </div>
 
-                <!-- Lock Overlay when blocked -->
-                <div class="sim-lock-overlay" id="simLockOverlay">
-                  <div class="sim-lock-icon">🔒</div>
-                  <h3 class="sim-lock-title" id="simLockTitle">Tiempo de Pantalla Agotado</h3>
-                  <p class="sim-lock-reason" id="simLockReason">Tus padres han pausado el uso del teléfono por hoy.</p>
-                  <div class="sim-lock-pin-box">
-                    <span class="sim-pin-label">Desbloqueo con PIN de Padres:</span>
-                    <div class="sim-pin-input-row">
-                      <input type="password" id="simPinInput" maxlength="4" placeholder="••••">
-                      <button id="btnSimUnlockPin">OK</button>
-                    </div>
-                  </div>
+                <!-- Hidden status hook for lock state without obstructive overlay -->
+                <div id="simLockOverlay" style="display: none;">
+                  <span id="simLockTitle"></span>
+                  <span id="simLockReason"></span>
+                  <input type="hidden" id="simPinInput" value="">
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- Live Ambient Audio Mode -->
-          <div class="panel-card audio-card">
-            <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
-              <div>
-                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                  <h2 class="panel-title" style="margin: 0;">🎙️ Micrófono Ambiental en Vivo</h2>
-                  <span class="badge badge-accent" style="background: rgba(16, 185, 129, 0.18); color: #34d399; font-size: 0.72rem; padding: 2px 8px; margin: 0;">⚡ Exclusivo Pro</span>
+            <!-- Unified Live Ambient Audio Visualizer integrated into Live Viewer -->
+            <div class="unified-audio-box" id="audioVisualizerBox">
+              <div class="unified-audio-header">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 1.1rem;">🎙️</span>
+                  <span style="font-size: 0.88rem; font-weight: 700; color: #f1f5f9;">Micrófono Ambiental en Vivo</span>
+                  <span class="badge badge-accent" style="background: rgba(16, 185, 129, 0.18); color: #34d399; font-size: 0.7rem; padding: 2px 7px;">⚡ Pro</span>
                 </div>
-                <p class="panel-subtitle" style="margin-top: 3px;">Escucha el sonido ambiente del entorno del menor</p>
+                <span id="audioLastReceivedTime" style="font-size: 0.75rem; color: var(--text-muted);">Sin audios recientes</span>
               </div>
-              <button id="btnTriggerAudioRecord" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
-                <span id="btnAudioActionIcon">🎙️</span>
-                <span id="btnAudioActionText">Escuchar (5s)</span>
-              </button>
-            </div>
 
-            <!-- Audio Waveform Visualizer -->
-            <div class="audio-visualizer-container" id="audioVisualizerBox">
-              <div class="soundwave-bar-wrapper" id="soundwaveBars">
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
-                <span class="soundwave-bar"></span>
+              <div class="unified-audio-center">
+                <div class="soundwave-bar-wrapper" id="soundwaveBars">
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                  <span class="soundwave-bar"></span>
+                </div>
+                <div class="audio-status-info" id="audioStatusText">
+                  Micrófono listo. Pulsa "Audio (5s)" arriba para solicitar 5 segundos de audio ambiente al móvil.
+                </div>
               </div>
-              <div class="audio-status-info" id="audioStatusText">
-                Micrófono listo. Pulsa el botón para solicitar 5 segundos de audio ambiente al móvil.
-              </div>
-              <audio id="audioAmbientPlayer" controls style="width: 100%; max-width: 420px; display: none; margin-top: 12px;"></audio>
-            </div>
 
-            <div class="audio-footer-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 0.8rem; color: var(--text-muted);">
-              <span id="audioLastReceivedTime">Sin audios recientes</span>
-              <span style="display: flex; align-items: center; gap: 6px; color: #34d399; font-weight: 500;">
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
-                Audio AAC Alta Fidelidad
-              </span>
+              <!-- Dedicated Full-Width Audio Player Container -->
+              <div class="unified-audio-player-wrap" id="audioPlayerWrap">
+                <audio id="audioAmbientPlayer" controls style="display: none;"></audio>
+              </div>
             </div>
           </div>
 
@@ -1054,13 +1053,21 @@
               </label>
               <!-- Selector de frecuencia GPS -->
               <select id="selectGpsFrequency" class="device-select-custom" style="font-size: 0.82rem; padding: 6px 10px;" title="Frecuencia de actualización de ubicación">
-                <option value="15">⏱️ Cada 15 seg (En vivo)</option>
-                <option value="30" selected>⏱️ Cada 30 seg (Normal)</option>
+                <option value="30" selected>⏱️ Cada 30 seg</option>
                 <option value="60">⏱️ Cada 1 min</option>
-                <option value="300">⏱️ Cada 5 min (Ahorro)</option>
+                <option value="300">⏱️ Cada 5 min</option>
+                <option value="600">⏱️ Cada 10 min</option>
               </select>
               <button id="btnMapTabRefreshLocation" class="btn btn-secondary btn-sm" title="Actualizar posición satelital">🔄 Actualizar</button>
-              <button id="btnMapTabRouteHistory" class="btn btn-secondary btn-sm" title="Trazar ruta del día">🗺️ Trazar Ruta</button>
+              <div style="display: inline-flex; align-items: center; gap: 4px;">
+                <button id="btnMapTabRouteHistory" class="btn btn-secondary btn-sm" title="Trazar ruta del día">🗺️ Trazar Ruta</button>
+                <select id="selectRouteHistoryDay" class="device-select-custom" style="font-size: 0.82rem; padding: 6px 10px;" title="Seleccionar día de la traza">
+                  <option value="today" selected>📅 Hoy</option>
+                  <option value="yesterday">📅 Ayer</option>
+                  <option value="custom">📅 Otra fecha...</option>
+                </select>
+                <input type="date" id="inputRouteHistoryDate" style="display: none; background: #1e293b; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 4px 8px; font-size: 0.82rem;">
+              </div>
               <button id="btnMapTabGeofences" class="btn btn-secondary btn-sm" title="Zonas seguras (Colegio, Casa)">👁️ Círculos</button>
             </div>
           </div>
@@ -1186,9 +1193,10 @@
             </div>
             <div class="filter-pills" id="historyTabFilterPills">
               <button class="filter-pill active" data-type="all">Todos</button>
-              <button class="filter-pill" data-type="warning">🛑 Bloqueos</button>
-              <button class="filter-pill" data-type="info">🚀 Aperturas</button>
+              <button class="filter-pill" data-type="blocked">🛑 Bloqueos</button>
+              <button class="filter-pill" data-type="app_open">🚀 Aperturas</button>
               <button class="filter-pill" data-type="alert">⚠️ Alertas</button>
+              <button class="filter-pill" data-type="gps">📍 GPS y Ubicación</button>
             </div>
           </div>
           <div class="activity-feed" id="historyTabActivityFeed" style="margin-top: 14px; max-height: 600px; overflow-y: auto;">
@@ -1264,11 +1272,10 @@
                 <div class="input-group-custom" style="margin-bottom: 14px;">
                   <label for="settingsGpsInterval" style="font-size: 0.84rem;">Tiempo de actualización de ubicación:</label>
                   <select id="settingsGpsInterval" class="device-select-custom" style="width: 100%;">
-                    <option value="15">Cada 15 segundos (Tiempo real / Mayor precisión)</option>
                     <option value="30" selected>Cada 30 segundos (Recomendado)</option>
                     <option value="60">Cada 1 minuto (Equilibrado)</option>
-                    <option value="120">Cada 2 minutos</option>
                     <option value="300">Cada 5 minutos (Ahorro de batería)</option>
+                    <option value="600">Cada 10 minutos (Máximo ahorro)</option>
                   </select>
                 </div>
                 <button class="btn btn-secondary btn-sm" id="btnSaveGpsSettings" style="width: 100%;">Guardar Ajustes GPS</button>
@@ -1334,6 +1341,34 @@
                   <input type="password" id="settingsParentPinInput" maxlength="4" placeholder="••••" style="font-size: 1.2rem; letter-spacing: 4px; text-align: center;">
                 </div>
                 <button class="btn btn-secondary btn-sm" id="btnSaveParentPinSettings" style="width: 100%;">Actualizar PIN</button>
+              </div>
+
+              <!-- 5. Duración de Capturas de Audio y Video -->
+              <div class="settings-card-box" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 18px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                  <span style="font-size: 1.3rem;">🎙️</span>
+                  <h3 style="color: #fff; font-size: 1.05rem; margin: 0;">Duración de Audio y Video</h3>
+                </div>
+                <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 14px;">
+                  Define el tiempo de grabación de los clips de audio ambiente y secuencias de video en vivo.
+                </p>
+                <div class="input-group-custom" style="margin-bottom: 12px;">
+                  <label for="settingsAudioDuration" style="font-size: 0.84rem;">Duración Audio Ambiental:</label>
+                  <select id="settingsAudioDuration" class="device-select-custom" style="width: 100%;">
+                    <option value="5" selected>5 segundos (Rápido)</option>
+                    <option value="7">7 segundos (Estándar)</option>
+                    <option value="10">10 segundos (Extendido)</option>
+                  </select>
+                </div>
+                <div class="input-group-custom" style="margin-bottom: 14px;">
+                  <label for="settingsVideoDuration" style="font-size: 0.84rem;">Duración Video en Vivo:</label>
+                  <select id="settingsVideoDuration" class="device-select-custom" style="width: 100%;">
+                    <option value="5" selected>5 segundos (10 fotogramas)</option>
+                    <option value="7">7 segundos (14 fotogramas)</option>
+                    <option value="10">10 segundos (20 fotogramas)</option>
+                  </select>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="btnSaveMediaDurationSettings" style="width: 100%;">Guardar Duración Multimedia</button>
               </div>
 
             </div>
@@ -1708,10 +1743,23 @@
             <button type="button" class="btn-geofence-cat" data-name="Lugar Seguro" data-icon="📍">📍 Otro Lugar</button>
           </div>
 
-          <!-- Nombre del Lugar -->
+          <!-- Nombre del Lugar e Icono -->
           <div class="input-group-custom" style="margin-top: 14px; margin-bottom: 12px;">
-            <label for="inputGeofenceName">Nombre Identificador del Lugar:</label>
-            <input type="text" id="inputGeofenceName" placeholder="Ej: Colegio San Agustín, Casa de los Abuelos, etc." value="Colegio 🏫">
+            <label for="inputGeofenceName">Nombre e Icono del Lugar:</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <select id="selectGeofenceIcon" class="device-select-custom" style="width: 70px; font-size: 1.15rem; text-align: center; padding: 6px;" title="Icono del lugar">
+                <option value="🏫" selected>🏫</option>
+                <option value="🏠">🏠</option>
+                <option value="⚽">⚽</option>
+                <option value="👵">👵</option>
+                <option value="🌳">🌳</option>
+                <option value="📚">📚</option>
+                <option value="🛒">🛒</option>
+                <option value="🏥">🏥</option>
+                <option value="📍">📍</option>
+              </select>
+              <input type="text" id="inputGeofenceName" placeholder="Ej: Colegio San Agustín, Casa de los Abuelos, etc." value="Colegio" style="flex: 1;">
+            </div>
           </div>
 
           <!-- Coordenadas Lat/Lng -->

@@ -70,11 +70,14 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
     }
 
     public void kickCurrentAppIfLocked(String reason) {
-        if (currentActivePackage == null || currentActivePackage.isEmpty()) return;
-        if (isEmergencyPackage(currentActivePackage)
-                || isLauncherPackage(currentActivePackage)
-                || getPackageName().equals(currentActivePackage)
-                || "com.android.systemui".equals(currentActivePackage)) {
+        ParentalConfig config = ParentalConfig.getInstance(this);
+        boolean isDevLocked = config.isDeviceLocked();
+
+        if (currentActivePackage != null && (isEmergencyPackage(currentActivePackage) || getPackageName().equals(currentActivePackage))) {
+            return;
+        }
+
+        if (!isDevLocked && currentActivePackage != null && (isLauncherPackage(currentActivePackage) || "com.android.systemui".equals(currentActivePackage))) {
             return;
         }
 
@@ -82,17 +85,19 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
         performGlobalAction(GLOBAL_ACTION_HOME);
 
         PackageManager pm = getPackageManager();
-        String appName = currentActivePackage;
-        try {
-            ApplicationInfo ai = pm.getApplicationInfo(currentActivePackage, 0);
-            appName = pm.getApplicationLabel(ai).toString();
-        } catch (Exception ignored) {}
+        String appName = "Dispositivo";
+        if (currentActivePackage != null && !currentActivePackage.isEmpty()) {
+            try {
+                ApplicationInfo ai = pm.getApplicationInfo(currentActivePackage, 0);
+                appName = pm.getApplicationLabel(ai).toString();
+            } catch (Exception ignored) {}
+        }
 
         Intent lockIntent = new Intent(this, LockOverlayActivity.class);
         lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         String lockReason = (reason != null && !reason.isEmpty()) ? reason : "El dispositivo se encuentra bloqueado por tus padres.";
         lockIntent.putExtra("BLOCK_REASON", lockReason);
-        lockIntent.putExtra("BLOCKED_PACKAGE", currentActivePackage);
+        lockIntent.putExtra("BLOCKED_PACKAGE", currentActivePackage != null ? currentActivePackage : "");
         lockIntent.putExtra("BLOCKED_APP_NAME", appName);
         lockIntent.putExtra("IS_DEVICE_LOCKED", true);
         startActivity(lockIntent);
@@ -364,10 +369,14 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
         }
     }
 
+    public String getCurrentActivePackage() {
+        return currentActivePackage != null ? currentActivePackage : "";
+    }
+
     /**
-     * Native 5-second video clip capture (sequential frames burst via Accessibility API)
+     * Native video clip capture with custom duration (5s, 7s, 10s via Accessibility API)
      */
-    public void captureVideoClip5s() {
+    public void captureVideoClip(int durationSeconds) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             Log.w(TAG, "Grabación de video requiere Android 11+");
             return;
@@ -378,12 +387,14 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
         }
         isRecordingVideoClip = true;
 
+        final int duration = (durationSeconds == 7 || durationSeconds == 10) ? durationSeconds : 5;
+        final int intervalMs = 500;
+        final int totalFrames = duration * 2;
+
         final List<String> capturedFrames = new ArrayList<>();
         final Handler handler = new Handler(Looper.getMainLooper());
-        final int totalFrames = 10;
-        final int intervalMs = 500;
 
-        Log.i(TAG, "Iniciando captura de video por 5 segundos (10 fotogramas cada 500ms)...");
+        Log.i(TAG, "Iniciando captura de video por " + duration + " segundos (" + totalFrames + " fotogramas cada " + intervalMs + "ms)...");
 
         for (int i = 0; i < totalFrames; i++) {
             final int frameIndex = i;
@@ -446,6 +457,10 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
                 }
             }, (long) i * intervalMs);
         }
+    }
+
+    public void captureVideoClip5s() {
+        captureVideoClip(5);
     }
 
     private void finishVideoRecording(List<String> capturedFrames, int intervalMs) {

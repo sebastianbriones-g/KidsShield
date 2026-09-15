@@ -128,6 +128,22 @@ public class ParentalConfig {
         prefs.edit().putString("bedtime_end", end).apply();
     }
 
+    public int getGpsIntervalSeconds() {
+        return prefs.getInt("gps_interval_seconds", 600);
+    }
+
+    public void setGpsIntervalSeconds(int seconds) {
+        prefs.edit().putInt("gps_interval_seconds", seconds > 0 ? seconds : 600).apply();
+    }
+
+    public boolean isGpsTrackingEnabled() {
+        return prefs.getBoolean("gps_tracking_enabled", true);
+    }
+
+    public void setGpsTrackingEnabled(boolean enabled) {
+        prefs.edit().putBoolean("gps_tracking_enabled", enabled).apply();
+    }
+
     public Set<String> getBlockedApps() {
         Set<String> set = prefs.getStringSet("blocked_apps", null);
         Set<String> result = new HashSet<>();

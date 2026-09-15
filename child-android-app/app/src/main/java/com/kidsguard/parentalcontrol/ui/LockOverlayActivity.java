@@ -66,8 +66,10 @@ public class LockOverlayActivity extends AppCompatActivity {
             }
         }
 
-        // El botón para volver al escritorio siempre está disponible para regresar a la pantalla de inicio
-        btnGoHome.setVisibility(View.VISIBLE);
+        // El botón para volver al escritorio solo está disponible si es bloqueo de app específica
+        if (btnGoHome != null) {
+            btnGoHome.setVisibility(isDevLocked ? View.GONE : View.VISIBLE);
+        }
 
         btnUnlockWithPin.setOnClickListener(new View.OnClickListener() {
             @Override

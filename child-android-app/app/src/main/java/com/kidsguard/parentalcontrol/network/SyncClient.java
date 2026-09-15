@@ -149,7 +149,20 @@ public class SyncClient {
                             }
                         }
                         if (resJson.has("dailyLimitMinutes")) {
-                            config.setDailyLimitMinutes(resJson.getInt("dailyLimitMinutes"));
+                            int newLimit = resJson.getInt("dailyLimitMinutes");
+                            config.setDailyLimitMinutes(newLimit);
+                            if (newLimit > 0 && config.isDeviceLocked()) {
+                                String curReason = config.getLockReason();
+                                if (curReason != null && (curReason.contains("Límite") || curReason.contains("tiempo"))) {
+                                    int usedToday = com.kidsguard.parentalcontrol.services.UsageMonitorService.getTodayUsageMinutes(context, null);
+                                    if (usedToday < newLimit) {
+                                        Log.i(TAG, "🔓 Límite ampliado por los padres (" + newLimit + " min) -> Desbloqueando pantalla");
+                                        config.setDeviceLocked(false);
+                                        config.setLockReason("");
+                                        com.kidsguard.parentalcontrol.ui.LockOverlayActivity.dismissIfOpen();
+                                    }
+                                }
+                            }
                         }
                         if (resJson.has("bedtimeEnabled")) {
                             config.setBedtimeEnabled(resJson.getBoolean("bedtimeEnabled"));
@@ -162,6 +175,12 @@ public class SyncClient {
                         }
                         if (resJson.has("parentPin")) {
                             config.setParentPin(resJson.getString("parentPin"));
+                        }
+                        if (resJson.has("gpsTrackingEnabled")) {
+                            config.setGpsTrackingEnabled(resJson.getBoolean("gpsTrackingEnabled"));
+                        }
+                        if (resJson.has("gpsIntervalSeconds")) {
+                            config.setGpsIntervalSeconds(resJson.getInt("gpsIntervalSeconds"));
                         }
                         if (resJson.has("blockedApps")) {
                             JSONArray blockedArr = resJson.getJSONArray("blockedApps");
@@ -178,17 +197,32 @@ public class SyncClient {
                             JSONArray cmds = resJson.getJSONArray("pendingCommands");
                             for (int i = 0; i < cmds.length(); i++) {
                                 String cmd = cmds.getString(i);
-                                if ("UNLINK_DEVICE".equalsIgnoreCase(cmd) || "UNLOCK_DEVICE".equalsIgnoreCase(cmd)) {
-                                    Log.i(TAG, "Comando recibido: " + cmd + " -> Liberando y desbloqueando teléfono");
+                                if ("UNLOCK_DEVICE".equalsIgnoreCase(cmd)) {
+                                    Log.i(TAG, "Comando recibido: UNLOCK_DEVICE -> Desbloqueando teléfono y cerrando pantalla de bloqueo");
+                                    config.setDeviceLocked(false);
+                                    config.setLockReason("");
+                                    com.kidsguard.parentalcontrol.ui.LockOverlayActivity.dismissIfOpen();
+                                } else if ("UNLINK_DEVICE".equalsIgnoreCase(cmd)) {
+                                    Log.i(TAG, "Comando recibido: UNLINK_DEVICE -> Liberando y desvinculando teléfono");
                                     handleUnlinkAndRelease(context);
                                 } else if ("LOCK_DEVICE".equalsIgnoreCase(cmd)) {
-                                    Log.i(TAG, "Comando recibido: LOCK_DEVICE -> Bloqueando teléfono");
+                                    Log.i(TAG, "Comando recibido: LOCK_DEVICE -> Bloqueando teléfono de inmediato");
                                     config.setDeviceLocked(true);
                                     String reason = config.getLockReason();
                                     if (reason == null || reason.isEmpty()) reason = "Dispositivo bloqueado por control parental.";
+                                    config.setLockReason(reason);
                                     AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
                                     if (a11y != null) {
                                         a11y.kickCurrentAppIfLocked(reason);
+                                    }
+                                    try {
+                                        Intent lockIntent = new Intent(context, com.kidsguard.parentalcontrol.ui.LockOverlayActivity.class);
+                                        lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                                        lockIntent.putExtra("BLOCK_REASON", reason);
+                                        lockIntent.putExtra("IS_DEVICE_LOCKED", true);
+                                        context.startActivity(lockIntent);
+                                    } catch (Exception e) {
+                                        Log.e(TAG, "Error lanzando LockOverlayActivity desde comando LOCK_DEVICE", e);
                                     }
                                 } else if (cmd.startsWith("BLOCK_APP:")) {
                                     String pkg = cmd.substring("BLOCK_APP:".length()).trim();
@@ -213,17 +247,27 @@ public class SyncClient {
                                 } else if ("REQUEST_LOCATION".equalsIgnoreCase(cmd)) {
                                     Log.i(TAG, "Comando recibido: REQUEST_LOCATION -> Actualizando GPS de inmediato");
                                     UsageMonitorService.triggerImmediateSync();
-                                } else if ("TAKE_VIDEO_5S".equalsIgnoreCase(cmd)) {
-                                    Log.i(TAG, "Comando recibido: TAKE_VIDEO_5S -> Iniciando captura de clip de 5 segundos");
+                                } else if (cmd != null && cmd.toUpperCase().startsWith("TAKE_VIDEO")) {
+                                    int durationSec = 5;
+                                    try {
+                                        durationSec = Integer.parseInt(cmd.toUpperCase().replace("TAKE_VIDEO_", "").replace("TAKE_VIDEO", "").replace("S", "").trim());
+                                    } catch (Exception ignored) {}
+                                    if (durationSec <= 0) durationSec = 5;
+                                    Log.i(TAG, "Comando recibido: " + cmd + " -> Iniciando captura de video de " + durationSec + "s");
                                     AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
                                     if (a11y != null) {
-                                        a11y.captureVideoClip5s();
+                                        a11y.captureVideoClip(durationSec);
                                     } else {
                                         Log.w(TAG, "No se puede capturar video clip: servicio de accesibilidad inactivo");
                                     }
-                                } else if ("RECORD_AUDIO_5S".equalsIgnoreCase(cmd)) {
-                                    Log.i(TAG, "Comando recibido: RECORD_AUDIO_5S -> Iniciando escucha ambiental de 5 segundos");
-                                    com.kidsguard.parentalcontrol.utils.AudioCaptureHelper.captureAndUploadAudio(context, 5);
+                                } else if (cmd != null && cmd.toUpperCase().startsWith("RECORD_AUDIO")) {
+                                    int durationSec = 5;
+                                    try {
+                                        durationSec = Integer.parseInt(cmd.toUpperCase().replace("RECORD_AUDIO_", "").replace("RECORD_AUDIO", "").replace("S", "").trim());
+                                    } catch (Exception ignored) {}
+                                    if (durationSec <= 0) durationSec = 5;
+                                    Log.i(TAG, "Comando recibido: " + cmd + " -> Iniciando escucha ambiental de " + durationSec + "s");
+                                    com.kidsguard.parentalcontrol.utils.AudioCaptureHelper.captureAndUploadAudio(context, durationSec);
                                 }
                             }
                         }

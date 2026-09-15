@@ -24,6 +24,10 @@
 - [Captura Automática y Multimedia en Tiempo Real](#-captura-automática-y-multimedia-en-tiempo-real)
 - [Bloqueo Infranqueable en la App Android](#-bloqueo-infranqueable-en-la-app-android)
 - [Requisitos del Sistema](#-requisitos-del-sistema)
+- [Monitoreo en Tiempo Real de Aplicaciones Activas](#-monitoreo-en-tiempo-real-de-aplicaciones-activas)
+- [Traza GPS Diaria, Control de Frecuencia Satelital y Alertas](#-traza-gps-diaria-control-de-frecuencia-satelital-y-alertas)
+- [Duración Dinámica de Audio y Video (5s, 7s, 10s)](#-duración-dinámica-de-audio-y-video-5s-7s-10s)
+- [Sincronización de Bloqueo, Tiempo de Pantalla e Historial](#-sincronización-de-bloqueo-tiempo-de-pantalla-e-historial)
 - [Guía de Instalación y Despliegue](#-guía-de-instalación-y-despliegue)
   - [1. Configuración del Servidor y Base de Datos](#1-configuración-del-servidor-y-base-de-datos)
   - [2. Configuración de Google OAuth 2.0](#2-configuración-de-google-oauth-20)
@@ -58,6 +62,12 @@
 - 🔓 **Desvinculación y Liberación Remota sin Pérdida de Sesión**: Desvinculación de terminales con liberación inmediata del móvil del menor manteniendo la sesión del padre activa en el panel de control.
 - 🎙️ **Modo Micrófono en Vivo**: Monitor ambiental en tiempo real con analizador de audio visual mediante Web Audio API para verificación de entorno seguro.
 - 🔋 **Telemetría y Estado de Conectividad Real**: Detección fidedigna del estado en línea/desconectado, modelo de hardware y nivel de batería.
+- ⏱️ **Tiempo Real Dinámico de App Activa**: Computación instantánea del tiempo de uso en primer plano (Instagram, WhatsApp, juegos) sin los desfases de bucket del sistema operativo Android, reflejando al instante el tiempo transcurrido en lugar de 0m.
+- 📍 **Intervalo GPS Estricto y Sin Alertas Repetitivas**: Sincronización fiel de la frecuencia GPS configurada por los padres (cada 30s, 1m, 5m, 10m). Eliminación de avisos emergentes repetitivos en segundo plano; las alertas solo se activan ante solicitud manual.
+- 🗺️ **Traza GPS Completa del Día con Selector**: Historial satelital continuo con selector de fecha (Hoy, Ayer o fecha personalizada), trazando la ruta entera en el mapa satelital Leaflet con marcadores de inicio de recorrido 🏁, fin / última posición 📍, resumen de puntos y cálculo automático de distancia acumulada.
+- 🎙️🎬 **Duración Configurable de Audio y Video (5s, 7s, 10s)**: Tarjeta de configuración dedicada en Ajustes de Dispositivos que permite seleccionar 5, 7 o 10 segundos de duración para la escucha ambiental de micrófono y los clips de video en vivo, actualizando los botones de acción reactivamente.
+- 🔓 **Sincronización Bidireccional de Bloqueo y Tiempo de Pantalla**: Botón directo de bloqueo/desbloqueo en la tarjeta de Tiempo en Pantalla. Si se desbloquea con el tiempo agotado, otorga automáticamente +15 minutos para permitir su uso normal.
+- 🛑🚀⚠️ **Historial Completo con Filtros Específicos y Eventos GPS**: Pestaña de historial con filtros por Bloqueos, Aperturas de Apps, Alertas y Coordenadas GPS con centrado interactivo en el mapa satelital al pulsar.
 - 🌐 **Soporte Tailscale / Red Local**: Detección automática de IPs de Tailscale y LAN para emparejamiento y control del dispositivo tanto dentro como fuera de casa sin necesidad de abrir puertos inseguros.
 - ☁️ **Base de Datos Distribuida en la Nube**: Integración nativa con **Turso (LibSQL)** para alta disponibilidad y baja latencia global, con fallback automático a SQLite local (`server/kidsshield.db`).
 
@@ -334,6 +344,51 @@ Si decides transferir el teléfono, cambiar de dispositivo o desactivar temporal
 1. Desde el panel web de padres, haz clic en **"Desvincular Dispositivo"** o elimina el perfil del menor.
 2. El servidor marcará el dispositivo como desvinculado, limpiará su historial de ubicaciones y eventos de Turso Cloud, y enviará en tiempo real la orden `UNLINK_DEVICE` y `UNLOCK_DEVICE`.
 3. El teléfono del menor cerrará inmediatamente la pantalla de bloqueo y restaurará los accesos de inmediato, sin requerir reinicios forzados.
+
+---
+
+## ⏱️ Monitoreo en Tiempo Real de Aplicaciones Activas
+
+A diferencia de soluciones tradicionales que dependen del cierre de la app para que Android liquide los minutos en `UsageStatsManager`, KidsShield integra un algoritmo de cálculo dinámico:
+1. **Detección Continua:** El servicio de accesibilidad (`AppBlockerAccessibilityService`) notifica en tiempo real cuál es el paquete que se encuentra en primer plano.
+2. **Cómputo en Vivo en el Servidor:** `server/index.js` registra la marca de tiempo de inicio de la app activa (`currentActiveAppStartedAt`).
+3. **Preservación de Historial:** Al procesar reportes periódicos, el servidor nunca disminuye el tiempo acumulado si la app está en uso, sumando los minutos de sesión en curso.
+4. **Visualización en Vivo:** El panel muestra de forma inmediata `En uso hoy: Xm`, evitando que permanezca en `0m` mientras el menor navega en Instagram, WhatsApp o cualquier otra aplicación.
+
+---
+
+## 📍 Traza GPS Diaria, Control de Frecuencia Satelital y Alertas
+
+El módulo de geolocalización satelital fue refinado para máxima confiabilidad y economía de batería:
+- **Respeto de Frecuencia:** Si los padres definen una actualización cada 10 minutos (600s), el dispositivo móvil del menor suspende consultas redundantes de GPS cada 6 segundos, ejecutándolas únicamente al vencer el intervalo o ante un comando explícito de actualización inmediata.
+- **Supresión de Spam en Alertas:** Se eliminaron las notificaciones emergentes invasivas por actualizaciones automáticas de fondo. Los mensajes de confirmación de coordenadas se reservan exclusivamente para cuando el padre o tutor pulsa de forma intencional el botón manual **"Actualizar"**.
+- **Traza Completa del Día:**
+  - Selector de fecha integrado: `Hoy`, `Ayer` o fecha personalizada mediante calendario nativo.
+  - Generación de polilínea continua en el mapa Leaflet con hasta 1000 puntos cronológicos.
+  - Marcador de inicio de jornada 🏁 (azul) y marcador de última posición 📍 (rojo) con popups interactivos de hora exacta.
+  - Estadísticas automáticas con el total de posiciones registradas y la distancia total recorrida (m o km).
+
+---
+
+## 🎙️🎬 Duración Dinámica de Audio y Video (5s, 7s, 10s)
+
+Desde la pestaña de **Configuración de Dispositivos**:
+- Los padres pueden configurar individualmente el tiempo de captura para:
+  - **Audio Ambiental:** 5 segundos (rápido), 7 segundos (estándar) o 10 segundos (extendido).
+  - **Video en Vivo:** 5 segundos (10 fotogramas), 7 segundos (14 fotogramas) o 10 segundos (20 fotogramas a ~500ms).
+- Los botones de la interfaz web (`Video (Xs)` y `Audio (Ys)`) se actualizan automáticamente en tiempo real.
+- Las órdenes remotas se transmiten por WebSocket y HTTP al dispositivo móvil con la duración precisa solicitada.
+
+---
+
+## 🔒 Sincronización de Bloqueo, Tiempo de Pantalla e Historial
+
+- **Interacción Bidireccional:** El botón de bloqueo directo en la tarjeta de Tiempo en Pantalla conversa fluidamente con los límites diarios: si el tiempo del menor se agotó (quedando bloqueado) y el padre pulsa "Desbloquear", el sistema otorga automáticamente **+15 minutos** para desbloquear el terminal sin fricciones.
+- **Filtros Específicos en el Historial:** El registro de actividad cuenta con pestañas de filtrado rápido:
+  - 🛑 **Bloqueos:** Intentos de apertura fuera de hora o apps prohibidas.
+  - 🚀 **Aperturas:** Registro de apps iniciadas por el menor.
+  - ⚠️ **Alertas:** Batería baja, GPS apagado o desinstalación intentada.
+  - 📍 **GPS:** Puntos de ubicación satelital con botón para centrar y enfocar en el mapa al instante.
 
 ---
 
