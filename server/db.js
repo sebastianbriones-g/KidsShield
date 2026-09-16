@@ -1053,6 +1053,27 @@ async function resetPasswordWithToken(token, newPassword) {
   }
 }
 
+async function deleteMultimediaItem(deviceId, mediaId) {
+  try {
+    const resImg = await client.execute({
+      sql: `DELETE FROM screenshots WHERE device_id = ? AND id = ?`,
+      args: [deviceId, mediaId]
+    });
+    const resVid = await client.execute({
+      sql: `DELETE FROM video_clips WHERE device_id = ? AND id = ?`,
+      args: [deviceId, mediaId]
+    });
+    const resAud = await client.execute({
+      sql: `DELETE FROM audio_clips WHERE device_id = ? AND id = ?`,
+      args: [deviceId, mediaId]
+    });
+    return (resImg.rowsAffected > 0 || resVid.rowsAffected > 0 || resAud.rowsAffected > 0);
+  } catch (e) {
+    console.error('[Database] Error eliminando multimedia:', e);
+    return false;
+  }
+}
+
 module.exports = {
   client,
   initDb,
@@ -1075,6 +1096,7 @@ module.exports = {
   getAudioClips,
   saveScreenshot,
   getScreenshots,
+  deleteMultimediaItem,
   saveGeofence,
   getGeofences,
   deleteGeofence,

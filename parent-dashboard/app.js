@@ -39,10 +39,73 @@ let dedicatedRouteMarkers = [];
 let isAudioRecordingRequested = false;
 let autoScreenshotTimer = null;
 let isLivePaused = false;
+let isOverLimit = false;
 let activeTimelineAppFilter = 'ALL';
+let activeTimelineTypeFilter = 'all';
 let currentView = 'portal';
 
-// Video Clip 5s State
+function isCurrentTimeInBedtimeClient(startStr, endStr) {
+  if (!startStr || !endStr) return false;
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const [startH, startM] = startStr.split(':').map(Number);
+  const [endH, endM] = endStr.split(':').map(Number);
+  const startMin = (startH || 0) * 60 + (startM || 0);
+  const endMin = (endH || 0) * 60 + (endM || 0);
+
+  if (startMin <= endMin) {
+    return currentMinutes >= startMin && currentMinutes < endMin;
+  } else {
+    // Horario nocturno que cruza la medianoche (ej: 18:00 a 07:00)
+    return currentMinutes >= startMin || currentMinutes < endMin;
+  }
+}
+
+function getFriendlyDeviceSerial(dev) {
+  if (!dev) return 'S/N: KS-PROTECTED';
+  if (dev.serialNumber) return `S/N: ${dev.serialNumber}`;
+  const idStr = String(dev.id || '01');
+  const numPart = idStr.replace(/\D/g, '') || '84';
+  const modelCode = (dev.model || 'KS').split(' ')[0].substring(0, 3).toUpperCase();
+  return `S/N: KS-${modelCode}-0${numPart}A`;
+}
+
+// Sound & Date Filter State
+let notificationSoundEnabled = localStorage.getItem('kidsshield_sound_enabled') !== 'false';
+let selectedMultimediaDate = 'all'; // 'all', 'today', 'yesterday', or 'YYYY-MM-DD'
+let selectedHistoryDate = 'today'; // 'all', 'today', 'yesterday', or 'YYYY-MM-DD'
+let selectedAppUsageDate = 'today'; // 'today', 'yesterday', or 'YYYY-MM-DD'
+let selectedKeystrokesDate = 'today'; // 'today', 'yesterday', 'all', or 'YYYY-MM-DD'
+let keystrokesFilterApp = 'all';
+let keystrokesSearchQuery = '';
+let editingGeofenceId = null;
+
+function matchesDateFilter(timestampOrDate, filterValue) {
+  if (!filterValue || filterValue === 'all') return true;
+  if (!timestampOrDate) return false;
+  const d = new Date(timestampOrDate);
+  if (isNaN(d.getTime())) return false;
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  const itemYear = d.getFullYear();
+  const itemMonth = String(d.getMonth() + 1).padStart(2, '0');
+  const itemDay = String(d.getDate()).padStart(2, '0');
+  const itemDateStr = `${itemYear}-${itemMonth}-${itemDay}`;
+
+  if (filterValue === 'today') {
+    return itemDateStr === todayStr;
+  }
+
+  if (filterValue === 'yesterday') {
+    const yest = new Date(Date.now() - 86400000);
+    const yestStr = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
+    return itemDateStr === yestStr;
+  }
+
+  return itemDateStr === filterValue;
+}
 let currentVideoClip = {
   frames: [],
   intervalMs: 500,
@@ -230,12 +293,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     setupWebSocket();
     try { bindEvents(); } catch (e) { console.error('[Init] Error in bindEvents:', e); }
-    try { await initAdminAuth(); } catch (e) { console.error('[Init] Error in initAdminAuth:', e); }
-    try { await initGoogleAuth(); } catch (e) { console.error('[Init] Error in initGoogleAuth:', e); }
-    try { await loadSubscriptionInfo(); } catch (e) { console.error('[Init] Error in loadSubscriptionInfo:', e); }
-    try { await loadDevicesList(); } catch (e) { console.error('[Init] Error in loadDevicesList:', e); }
-    try { await checkUrlResetToken(); } catch (e) { console.error('[Init] Error in checkUrlResetToken:', e); }
-    try { renderAll(); } catch (e) { console.error('[Init] Error in renderAll:', e); }
+    if (adminAuthToken) {
+      try { await initAdminAuth(); } catch (e) { console.error('[Init] Error in initAdminAuth:', e); }
+      try { await initGoogleAuth(); } catch (e) { console.error('[Init] Error in initGoogleAuth:', e); }
+      try { await loadSubscriptionInfo(); } catch (e) { console.error('[Init] Error in loadSubscriptionInfo:', e); }
+      try { await loadDevicesList(); } catch (e) { console.error('[Init] Error in loadDevicesList:', e); }
+      try { await checkUrlResetToken(); } catch (e) { console.error('[Init] Error in checkUrlResetToken:', e); }
+      try { renderAll(); } catch (e) { console.error('[Init] Error in renderAll:', e); }
+    } else {
+      setAdminLoggedOutUI();
+    }
     startClock();
   } catch (globalInitErr) {
     console.error('[Init] Fatal startup error caught:', globalInitErr);
@@ -268,6 +335,7 @@ function renderAll() {
   }
   renderActivityFeed();
   renderHistoryTab();
+  fetchAndRenderAppUsage(selectedAppUsageDate);
 }
 
 // Render empty / waiting state when no device is linked
@@ -439,7 +507,8 @@ function renderHeader() {
   const usedHeader = currentDevice.screenTimeTodayMinutes || 0;
   const limitHeader = currentDevice.dailyLimitMinutes || 120;
   const hasNoTimeHeader = limitHeader > 0 && usedHeader >= limitHeader;
-  const isMasterLocked = Boolean(currentDevice.isLocked) || hasNoTimeHeader;
+  const isBedtimeActiveHeader = Boolean(currentDevice.bedtimeEnabled) && isCurrentTimeInBedtimeClient(currentDevice.bedtimeStart, currentDevice.bedtimeEnd);
+  const isMasterLocked = Boolean(currentDevice.isLocked) || hasNoTimeHeader || isBedtimeActiveHeader;
 
   if (isMasterLocked) {
     btnMasterLock.classList.add('is-locked');
@@ -463,9 +532,14 @@ function renderHero() {
   screenTimeProgressBar.style.width = `${percent}%`;
 
   const hasNoTime = limit > 0 && used >= limit;
-  const isDeviceLocked = Boolean(currentDevice.isLocked) || hasNoTime;
+  const isBedtimeActive = Boolean(currentDevice.bedtimeEnabled) && isCurrentTimeInBedtimeClient(currentDevice.bedtimeStart, currentDevice.bedtimeEnd);
+  const isDeviceLocked = Boolean(currentDevice.isLocked) || hasNoTime || isBedtimeActive;
 
-  if (used === 0) {
+  if (isBedtimeActive) {
+    screenTimeProgressBar.className = 'progress-bar-fill progress-exceeded';
+    limitStatusBadge.className = 'badge badge-warning';
+    limitStatusBadge.textContent = '🌙 Horario Nocturno (Bloqueado)';
+  } else if (used === 0) {
     screenTimeProgressBar.className = 'progress-bar-fill';
     limitStatusBadge.className = 'badge badge-accent';
     limitStatusBadge.textContent = '🟢 Sin uso hoy';
@@ -487,7 +561,7 @@ function renderHero() {
     if (isDeviceLocked) {
       btnHeroLock.className = 'btn-hero-lock is-locked';
       heroLockIcon.textContent = '🔓';
-      heroLockText.textContent = hasNoTime ? 'Desbloquear (+15 min de uso)' : 'Desbloquear Teléfono';
+      heroLockText.textContent = hasNoTime ? 'Desbloquear (+15 min de uso)' : (isBedtimeActive ? 'Desbloquear Teléfono' : 'Desbloquear Teléfono');
     } else {
       btnHeroLock.className = 'btn-hero-lock is-unlocked';
       heroLockIcon.textContent = '🔒';
@@ -502,14 +576,17 @@ function renderHero() {
     activeAppName.textContent = activeApp.name;
     activeAppCategory.textContent = activeApp.category || 'Aplicación';
 
-    // Calcular tiempo dinámico en vivo si está en primer plano ahora
-    let currentUsageMinutes = activeApp.timeTodayMinutes || 0;
-    if (currentDevice.currentActiveAppStartedAt) {
-      const elapsedSessionMin = Math.max(1, Math.floor((Date.now() - new Date(currentDevice.currentActiveAppStartedAt).getTime()) / 60000));
-      currentUsageMinutes = Math.max(currentUsageMinutes, elapsedSessionMin);
-    } else if (currentUsageMinutes === 0 && currentDevice.isOnline) {
-      currentUsageMinutes = 1; // Sesión en curso
+    // Tiempo real medido por el sistema Android (UsageStatsManager)
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const minutesSinceMidnight = Math.max(1, Math.floor((Date.now() - startOfToday.getTime()) / 60000));
+
+    let currentUsageMinutes = typeof activeApp.timeTodayMinutes === 'number' ? activeApp.timeTodayMinutes : 0;
+    if (currentUsageMinutes === 0 && currentDevice.isOnline && currentDevice.currentActiveApp) {
+      currentUsageMinutes = 1; // Acaba de abrirse
     }
+    // Límite estricto: el tiempo en uso HOY nunca puede superar los minutos transcurridos del día actual
+    currentUsageMinutes = Math.min(currentUsageMinutes, minutesSinceMidnight, 1440);
     activeAppDesc.textContent = `En uso hoy: ${formatMinutes(currentUsageMinutes)}`;
 
     btnQuickBlockActiveApp.disabled = false;
@@ -522,7 +599,7 @@ function renderHero() {
       btnQuickBlockActiveApp.style.color = '#34d399';
     } else {
       btnQuickBlockActiveApp.textContent = '⛔ Bloquear Esta App';
-      btnQuickBlockActiveApp.style.background = 'rgba(239, 68, 68, 0.15)';
+      btnQuickBlockActiveApp.style.background = 'rgba(239, 68, 68, 0.2)';
       btnQuickBlockActiveApp.style.color = '#f87171';
     }
   } else {
@@ -542,10 +619,12 @@ function renderHero() {
   }
 
   // Bedtime
-  toggleBedtime.checked = Boolean(currentDevice.bedtimeEnabled);
-  bedtimeTimeDisplay.textContent = `${currentDevice.bedtimeStart || '21:30'} - ${currentDevice.bedtimeEnd || '07:00'}`;
-  bedtimeStartInput.value = currentDevice.bedtimeStart || '21:30';
-  bedtimeEndInput.value = currentDevice.bedtimeEnd || '07:00';
+  if (toggleBedtime) toggleBedtime.checked = Boolean(currentDevice.bedtimeEnabled);
+  const toggleBedtimeSchedule = document.getElementById('toggleBedtimeSchedule');
+  if (toggleBedtimeSchedule) toggleBedtimeSchedule.checked = Boolean(currentDevice.bedtimeEnabled);
+  if (bedtimeTimeDisplay) bedtimeTimeDisplay.textContent = `${currentDevice.bedtimeStart || '21:30'} - ${currentDevice.bedtimeEnd || '07:00'}`;
+  if (bedtimeStartInput) bedtimeStartInput.value = currentDevice.bedtimeStart || '21:30';
+  if (bedtimeEndInput) bedtimeEndInput.value = currentDevice.bedtimeEnd || '07:00';
 }
 
 function renderAppList() {
@@ -565,11 +644,35 @@ function renderAppList() {
   }
 
   const filtered = currentDevice.appCatalog.filter(app => {
-    const matchesCat = activeCategoryFilter === 'all' ||
-                       app.category === activeCategoryFilter ||
-                       ((activeCategoryFilter === 'Navegación Web' || activeCategoryFilter === 'Navegadores' || activeCategoryFilter === 'Web') &&
-                        (app.category.includes('Navega') || app.category.includes('Web') || (app.name && app.name.toLowerCase().includes('chrome'))));
-    const matchesSearch = app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    const isSystemApp = (app.category && app.category.toLowerCase().includes('sistema')) || app.isSystem || (app.package && (app.package.startsWith('com.android') || app.package.startsWith('com.google.android')));
+    const cat = (app.category || '').toLowerCase().trim();
+    const filter = (activeCategoryFilter || 'all').toLowerCase().trim();
+
+    let matchesCat = (filter === 'all');
+    if (!matchesCat) {
+      if (filter === 'sistema') {
+        matchesCat = isSystemApp || cat.includes('sistema');
+      } else if (filter === 'juegos') {
+        matchesCat = cat.includes('juego') || cat.includes('game');
+      } else if (filter === 'redes sociales') {
+        matchesCat = cat.includes('social') || cat.includes('red');
+      } else if (filter === 'videos') {
+        matchesCat = cat.includes('video') || cat.includes('entreten') || cat.includes('youtube') || cat.includes('netflix') || cat.includes('tiktok') || cat.includes('streaming');
+      } else if (filter === 'navegación web' || filter === 'web') {
+        matchesCat = cat.includes('navega') || cat.includes('web') || (app.name && (app.name.toLowerCase().includes('chrome') || app.name.toLowerCase().includes('browser')));
+      } else if (filter === 'educación') {
+        matchesCat = cat.includes('educa') || cat.includes('aprende');
+      } else if (filter === 'comunicación') {
+        matchesCat = cat.includes('comunica') || cat.includes('chat') || cat.includes('mensaj') || (app.name && (app.name.toLowerCase().includes('whatsapp') || app.name.toLowerCase().includes('telegram')));
+      } else if (filter === 'utilidades') {
+        matchesCat = cat.includes('utili') || cat.includes('herram') || cat.includes('tool');
+      } else {
+        matchesCat = cat === filter;
+      }
+    }
+
+    const matchesSearch = !searchQuery ||
+                          app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           app.package.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCat && matchesSearch;
   });
@@ -627,28 +730,46 @@ function renderAppList() {
       btnClass = 'btn-blocked';
     }
 
+    const appCatNorm = (app.category || '').toLowerCase();
+
     row.innerHTML = `
       <div class="app-info-left">
         <div class="app-icon-badge">${app.icon}</div>
         <div class="app-text-group">
           <div class="app-title-line">
             <span class="app-name">${app.name}</span>
-            <span class="app-tag">${app.category}</span>
+            <span class="app-tag-badge">${app.category || 'Utilidades'}</span>
             ${appLimit > 0 ? `<span class="app-limit-badge ${isLimitExceeded ? 'exceeded' : ''}">⏱️ Límite: ${appLimit}m</span>` : ''}
           </div>
           <span class="app-time-sub">${timeSub}</span>
         </div>
       </div>
       <div class="app-item-actions">
-        <select class="app-limit-select" data-pkg="${app.package}" title="Fijar límite diario para esta aplicación">
-          <option value="0" ${!appLimit ? 'selected' : ''}>Sin límite</option>
-          <option value="15" ${appLimit === 15 ? 'selected' : ''}>15 min</option>
-          <option value="30" ${appLimit === 30 ? 'selected' : ''}>30 min</option>
-          <option value="45" ${appLimit === 45 ? 'selected' : ''}>45 min</option>
-          <option value="60" ${appLimit === 60 ? 'selected' : ''}>1 hora</option>
-          <option value="90" ${appLimit === 90 ? 'selected' : ''}>1.5 horas</option>
-          <option value="120" ${appLimit === 120 ? 'selected' : ''}>2 horas</option>
-        </select>
+        <div class="app-control-field">
+          <label class="app-field-label">Categoría</label>
+          <select class="app-category-select" data-pkg="${app.package}" title="Cambiar categoría de la app">
+            <option value="Juegos" ${appCatNorm.includes('juego') ? 'selected' : ''}>🎮 Juegos</option>
+            <option value="Redes Sociales" ${appCatNorm.includes('social') || appCatNorm.includes('red') ? 'selected' : ''}>📱 Redes</option>
+            <option value="Videos" ${appCatNorm.includes('video') || appCatNorm.includes('entreten') ? 'selected' : ''}>🎬 Videos</option>
+            <option value="Navegación Web" ${appCatNorm.includes('navega') || appCatNorm.includes('web') ? 'selected' : ''}>🌐 Web</option>
+            <option value="Educación" ${appCatNorm.includes('educa') ? 'selected' : ''}>🎓 Educación</option>
+            <option value="Comunicación" ${appCatNorm.includes('comunica') || appCatNorm.includes('mensaj') ? 'selected' : ''}>💬 Comunicación</option>
+            <option value="Utilidades" ${appCatNorm.includes('utili') ? 'selected' : ''}>📁 Utilidades</option>
+            <option value="Sistema" ${appCatNorm.includes('sistema') ? 'selected' : ''}>⚙️ Sistema</option>
+          </select>
+        </div>
+        <div class="app-control-field">
+          <label class="app-field-label">Límite Diario</label>
+          <select class="app-limit-select" data-pkg="${app.package}" title="Fijar límite diario para esta aplicación">
+            <option value="0" ${!appLimit ? 'selected' : ''}>Sin límite</option>
+            <option value="15" ${appLimit === 15 ? 'selected' : ''}>15 min</option>
+            <option value="30" ${appLimit === 30 ? 'selected' : ''}>30 min</option>
+            <option value="45" ${appLimit === 45 ? 'selected' : ''}>45 min</option>
+            <option value="60" ${appLimit === 60 ? 'selected' : ''}>1 hora</option>
+            <option value="90" ${appLimit === 90 ? 'selected' : ''}>1.5 horas</option>
+            <option value="120" ${appLimit === 120 ? 'selected' : ''}>2 horas</option>
+          </select>
+        </div>
         <button class="toggle-block-btn ${btnClass}" data-pkg="${app.package}">
           ${btnText}
         </button>
@@ -657,6 +778,27 @@ function renderAppList() {
 
     row.querySelector('.toggle-block-btn').addEventListener('click', () => {
       toggleAppBlock(app.package, !app.isBlocked);
+    });
+
+    row.querySelector('.app-category-select').addEventListener('change', async (e) => {
+      const newCat = e.target.value;
+      try {
+        const res = await apiFetch(`/api/devices/${currentDevice.id}/app-category`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ packageName: app.package, category: newCat })
+        });
+        if (res.ok) {
+          app.category = newCat;
+          if (newCat.includes('Sistema')) app.icon = '⚙️';
+          showToast(`Categoría de ${app.name} cambiada a ${newCat}`, 'success');
+          renderAppList();
+        } else {
+          showToast('No se pudo guardar la categoría', 'danger');
+        }
+      } catch (err) {
+        showToast('Error de conexión', 'danger');
+      }
     });
 
     row.querySelector('.app-limit-select').addEventListener('change', (e) => {
@@ -676,8 +818,9 @@ function renderAppList() {
 }
 
 function renderScheduleControls() {
-  dailyLimitRange.value = currentDevice.dailyLimitMinutes;
-  dailyLimitValText.textContent = formatMinutes(currentDevice.dailyLimitMinutes);
+  if (!currentDevice) return;
+  if (dailyLimitRange) dailyLimitRange.value = currentDevice.dailyLimitMinutes || 120;
+  if (dailyLimitValText) dailyLimitValText.textContent = formatMinutes(currentDevice.dailyLimitMinutes || 120);
 }
 
 function renderSimulator() {
@@ -740,8 +883,23 @@ function renderSimulator() {
 
       if (simScreenshotStatusText && currentDevice.lastScreenshotTime) {
         const d = new Date(currentDevice.lastScreenshotTime);
-        simScreenshotStatusText.innerHTML = `✅ Última captura en vivo: <strong>${d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</strong>`;
-        simScreenshotStatusText.style.color = '#34d399';
+        const now = new Date();
+        const diffSec = Math.max(0, Math.floor((now.getTime() - d.getTime()) / 1000));
+        const diffMin = Math.floor(diffSec / 60);
+        const isToday = d.toDateString() === now.toDateString();
+        const timeStr = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+        if (diffSec < 120 && isToday) {
+          simScreenshotStatusText.innerHTML = `🟢 Transmisión en vivo: <strong>${timeStr}</strong> <span style="font-size:0.75rem; color:#a7f3d0;">(hace ${diffSec}s)</span>`;
+          simScreenshotStatusText.style.color = '#34d399';
+        } else if (isToday) {
+          simScreenshotStatusText.innerHTML = `🟡 Última captura hoy: <strong>${timeStr}</strong> <span style="font-size:0.75rem; color:#fde68a;">(hace ${diffMin} min)</span>`;
+          simScreenshotStatusText.style.color = '#fbbf24';
+        } else {
+          const dateStr = d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+          simScreenshotStatusText.innerHTML = `⚪ Captura archivada: <strong>${dateStr}, ${timeStr}</strong>`;
+          simScreenshotStatusText.style.color = '#94a3b8';
+        }
       }
     } else {
       simLiveScreenImg.style.display = 'none';
@@ -799,11 +957,17 @@ function renderMap() {
     if (mapContainer && typeof L !== 'undefined') {
       try {
         if (!leafletMap) {
-          leafletMap = L.map('mapLeaflet', { zoomControl: true }).setView([-33.4489, -70.6693], 12);
+          leafletMap = L.map('mapLeaflet', { zoomControl: true }).setView([-33.4489, -70.6693], 13);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '&copy; OpenStreetMap'
           }).addTo(leafletMap);
+        }
+        if (areGeofencesVisible) {
+          fetchAndRenderGeofences();
+        }
+        if (typeof setupMapClickListener === 'function') {
+          setupMapClickListener(leafletMap);
         }
         setTimeout(() => { if (leafletMap) leafletMap.invalidateSize(); }, 150);
       } catch (e) {}
@@ -880,7 +1044,8 @@ function renderMap() {
 }
 
 function renderTimelineAppChips() {
-  const chipsContainer = document.getElementById('timelineFilterChips');
+  const chipsContainer = document.getElementById('timelineAppFilterChips') || document.getElementById('timelineFilterChips');
+  const dropdown = document.getElementById('selectTimelineAppDropdown');
   if (!chipsContainer) return;
   chipsContainer.innerHTML = '';
 
@@ -890,45 +1055,101 @@ function renderTimelineAppChips() {
   const appsMap = new Map();
   if (currentDevice.appCatalog) {
     currentDevice.appCatalog.forEach(a => {
-      appsMap.set(a.package, { name: a.name, icon: a.icon || '📱', package: a.package });
+      appsMap.set(a.package, {
+        name: a.name,
+        icon: a.icon || '📱',
+        package: a.package,
+        minutes: a.timeTodayMinutes || 0
+      });
     });
   }
 
   if (currentDevice.activityLog) {
     currentDevice.activityLog.forEach(item => {
-      if (item.package && !appsMap.has(item.package)) {
-        appsMap.set(item.package, {
-          name: item.appName || item.package,
-          icon: '📱',
-          package: item.package
-        });
+      if (item.package) {
+        if (!appsMap.has(item.package)) {
+          appsMap.set(item.package, {
+            name: item.appName || item.package,
+            icon: '📱',
+            package: item.package,
+            minutes: 0
+          });
+        }
       }
     });
   }
 
-  // Chip 'Todas las Apps'
+  const allApps = Array.from(appsMap.values());
+  // Ordenar por minutos hoy descendente
+  allApps.sort((a, b) => b.minutes - a.minutes);
+
+  // Top 3 apps para chips rápidos
+  const topApps = allApps.slice(0, 3);
+  const remainingApps = allApps.slice(3);
+
+  // Chip 1: 'Todas las Apps'
   const btnAll = document.createElement('button');
-  btnAll.className = `timeline-chip ${activeTimelineAppFilter === 'ALL' ? 'active' : ''}`;
-  btnAll.innerHTML = `<span>🌐</span><span>Todas las Apps</span>`;
+  btnAll.className = `app-chip-pill ${activeTimelineAppFilter === 'ALL' ? 'active' : ''}`;
+  btnAll.innerHTML = `<span>🌐 Todas</span>`;
   btnAll.addEventListener('click', () => {
     activeTimelineAppFilter = 'ALL';
+    if (dropdown) dropdown.value = 'ALL';
     renderTimelineAppChips();
     renderActivityFeed();
   });
   chipsContainer.appendChild(btnAll);
 
-  // Chips por cada aplicación detectada
-  appsMap.forEach(app => {
+  // Chips para las Top 3 apps más utilizadas
+  topApps.forEach(app => {
     const btn = document.createElement('button');
-    btn.className = `timeline-chip ${activeTimelineAppFilter === app.package ? 'active' : ''}`;
-    btn.innerHTML = `<span>${app.icon}</span><span>${app.name}</span>`;
+    btn.className = `app-chip-pill ${activeTimelineAppFilter === app.package ? 'active' : ''}`;
+    btn.innerHTML = `<span>${app.icon} ${app.name}</span>`;
     btn.addEventListener('click', () => {
       activeTimelineAppFilter = app.package;
+      if (dropdown) dropdown.value = app.package;
       renderTimelineAppChips();
       renderActivityFeed();
     });
     chipsContainer.appendChild(btn);
   });
+
+  // Si hay una app activa seleccionada del dropdown que no está en las top 3, mostrar chip activo para ella
+  const isSelectedInTop = topApps.some(a => a.package === activeTimelineAppFilter);
+  if (activeTimelineAppFilter !== 'ALL' && !isSelectedInTop) {
+    const activeAppObj = allApps.find(a => a.package === activeTimelineAppFilter);
+    if (activeAppObj) {
+      const btnActive = document.createElement('button');
+      btnActive.className = 'app-chip-pill active';
+      btnActive.innerHTML = `<span>${activeAppObj.icon} ${activeAppObj.name} ✕</span>`;
+      btnActive.title = 'Quitar filtro de esta aplicación';
+      btnActive.addEventListener('click', () => {
+        activeTimelineAppFilter = 'ALL';
+        if (dropdown) dropdown.value = 'ALL';
+        renderTimelineAppChips();
+        renderActivityFeed();
+      });
+      chipsContainer.appendChild(btnActive);
+    }
+  }
+
+  // Poblar dropdown con todas las aplicaciones ordenadas alfabéticamente
+  if (dropdown) {
+    const sortedAlpha = [...allApps].sort((a, b) => a.name.localeCompare(b.name));
+    let optionsHtml = `<option value="ALL" ${activeTimelineAppFilter === 'ALL' ? 'selected' : ''}>🔍 Más aplicaciones (${allApps.length})...</option>`;
+    sortedAlpha.forEach(app => {
+      optionsHtml += `<option value="${app.package}" ${activeTimelineAppFilter === app.package ? 'selected' : ''}>${app.icon} ${app.name}</option>`;
+    });
+    dropdown.innerHTML = optionsHtml;
+
+    if (!dropdown._hasChangeListener) {
+      dropdown._hasChangeListener = true;
+      dropdown.addEventListener('change', (e) => {
+        activeTimelineAppFilter = e.target.value;
+        renderTimelineAppChips();
+        renderActivityFeed();
+      });
+    }
+  }
 }
 
 function renderActivityFeed() {
@@ -948,14 +1169,30 @@ function renderActivityFeed() {
   }
 
   const filtered = currentDevice.activityLog.filter(item => {
-    if (activeTimelineAppFilter === 'ALL') return true;
-    return item.package === activeTimelineAppFilter || item.appName === activeTimelineAppFilter;
+    // 1. Filtro por Aplicación
+    const matchesApp = (activeTimelineAppFilter === 'ALL') || (item.package === activeTimelineAppFilter || item.appName === activeTimelineAppFilter);
+    if (!matchesApp) return false;
+
+    // 2. Filtro por Tipo de Evento
+    if (activeTimelineTypeFilter === 'all') return true;
+    const type = (item.type || '').toLowerCase();
+    const msg = (item.message || '').toLowerCase();
+    if (activeTimelineTypeFilter === 'warning') {
+      return type === 'warning' || type === 'blocked' || msg.includes('bloque') || msg.includes('límite') || msg.includes('agotado');
+    }
+    if (activeTimelineTypeFilter === 'info') {
+      return type === 'info' || type === 'open' || type === 'app_open' || msg.includes('abrió') || msg.includes('inició');
+    }
+    if (activeTimelineTypeFilter === 'alert') {
+      return type === 'alert' || type === 'gps_alert' || type === 'danger' || msg.includes('alerta') || msg.includes('geocerca') || msg.includes('peligro');
+    }
+    return true;
   });
 
   if (filtered.length === 0) {
     activityFeedContainer.innerHTML = `
       <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 0.85rem;">
-        No hay eventos registrados para esta aplicación todavía.
+        No hay eventos registrados con estos filtros activos.
       </div>
     `;
     return;
@@ -1154,7 +1391,9 @@ function switchDashboardView(viewId, targetAnchorId = null) {
     map: 'tabViewMap',
     multimedia: 'tabViewMultimedia',
     history: 'tabViewHistory',
-    settings: 'tabViewSettings'
+    keystrokes: 'tabViewKeystrokes',
+    settings: 'tabViewSettings',
+    reports: 'tabViewReports'
   };
 
   const targetElemId = activeViewMap[viewId] || 'tabViewOverview';
@@ -1168,6 +1407,7 @@ function switchDashboardView(viewId, targetAnchorId = null) {
   if (viewId === 'overview') {
     renderFamilyOverviewCards();
     syncChildContextSelectors();
+    fetchAndRenderAppUsage(selectedAppUsageDate);
     if (targetAnchorId) {
       setTimeout(() => {
         const el = document.getElementById(targetAnchorId);
@@ -1193,6 +1433,12 @@ function switchDashboardView(viewId, targetAnchorId = null) {
   } else if (viewId === 'history') {
     syncChildContextSelectors();
     renderHistoryTab();
+  } else if (viewId === 'keystrokes') {
+    syncChildContextSelectors();
+    fetchAndRenderKeystrokes(selectedKeystrokesDate);
+  } else if (viewId === 'reports') {
+    syncChildContextSelectors();
+    initMonthlyReportsView();
   } else if (viewId === 'settings') {
     const isBillingActive = document.getElementById('subtabBtnBillingConfig')?.classList.contains('active');
     if (isBillingActive) {
@@ -1390,13 +1636,14 @@ function renderFamilyOverviewCards() {
     const childDisplayName = dev.childName || (dev.id === 'KID-PHONE-01' ? 'Seba' : (dev.name || 'Hijo'));
 
     return `
-      <div class="child-overview-card ${isSelected ? 'is-active-device' : ''}" id="overviewCard-${dev.id}">
+      <div class="child-overview-card ${isSelected ? 'is-active-device' : ''}" id="overviewCard-${dev.id}" onclick="onDeviceSelected('${dev.id}')" style="cursor: pointer; position: relative; transition: all 0.25s ease; ${isSelected ? 'border: 2px solid #818cf8; box-shadow: 0 0 16px rgba(99, 102, 241, 0.35); background: rgba(99, 102, 241, 0.08);' : ''}">
+        ${isSelected ? '<div style="position: absolute; top: -10px; right: 14px; background: #6366f1; color: #fff; font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; box-shadow: 0 2px 8px rgba(99,102,241,0.5); z-index: 2;">👁️ Supervisando ahora</div>' : ''}
         <div class="card-child-header">
           <div class="child-info-group">
             <div class="child-avatar-badge">${dev.avatar || (isTablet ? '📟' : '👦')}</div>
             <div>
               <h4 class="child-name-text">${childDisplayName}</h4>
-              <p class="child-device-model">${cleanDevName} • <span style="font-family: monospace;">${dev.id}</span></p>
+              <p class="child-device-model">${cleanDevName} • <span style="color: #94a3b8; font-size: 0.74rem;">${getFriendlyDeviceSerial(dev)}</span></p>
             </div>
           </div>
           <span class="status-indicator ${isOnline ? 'online' : 'offline'}">
@@ -1425,21 +1672,21 @@ function renderFamilyOverviewCards() {
         </div>
 
         <div class="card-actions-row">
-          <button class="btn-card-view-screen" onclick="selectAndFocusScreen('${dev.id}')" style="${isSelected ? 'width: 100%; flex: 1;' : ''}">
+          <button class="btn-card-view-screen" onclick="event.stopPropagation(); selectAndFocusScreen('${dev.id}')" style="${isSelected ? 'width: 100%; flex: 1;' : ''}">
             ${isSelected ? '👁️ Viendo en Vivo' : '👁️ Ver Pantalla'}
           </button>
           ${!isSelected ? `
-          <button class="btn-card-quick-lock ${isLocked ? 'is-locked' : 'is-unlocked'}" onclick="toggleDeviceLockById('${dev.id}')">
+          <button class="btn-card-quick-lock ${isLocked ? 'is-locked' : 'is-unlocked'}" onclick="event.stopPropagation(); toggleDeviceLockById('${dev.id}')">
             ${isLocked ? '🔓 Desbloquear' : '🔒 Bloquear'}
           </button>
           ` : ''}
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 0.78rem;">
-          <button class="btn btn-outline btn-sm" onclick="selectAndGoSettings('${dev.id}')" style="font-size: 0.74rem; padding: 4px 8px;" title="Ajustes y límites de este dispositivo">
+          <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); selectAndGoSettings('${dev.id}')" style="font-size: 0.74rem; padding: 4px 8px;" title="Ajustes y límites de este dispositivo">
             ⚙️ Configurar
           </button>
-          <button class="btn btn-danger-outline btn-sm" onclick="openUnlinkForDevice('${dev.id}')" style="font-size: 0.74rem; padding: 4px 8px;" title="Desvincular y liberar teléfono">
+          <button class="btn btn-danger-outline btn-sm" onclick="event.stopPropagation(); openUnlinkForDevice('${dev.id}')" style="font-size: 0.74rem; padding: 4px 8px;" title="Desvincular y liberar teléfono">
             🗑️ Desvincular
           </button>
         </div>
@@ -1619,8 +1866,8 @@ function renderFamilyTab() {
   const familyDevicesUsageText = document.getElementById('familyDevicesUsageText');
   const familyPlanBadge = document.getElementById('familyPlanBadge');
 
-  const famId = (adminUser && adminUser.familyId) || 'FAM-DEFAULT-01';
-  if (familyIdDisplay) familyIdDisplay.textContent = famId;
+  const famName = (adminUser && adminUser.name) ? `Familia ${adminUser.name.split(' ')[0]}` : 'Familia Protegida';
+  if (familyIdDisplay) familyIdDisplay.textContent = famName;
   if (familyOwnerName) familyOwnerName.textContent = (adminUser && adminUser.name) || 'Administrador Familiar';
   if (familyOwnerEmail) familyOwnerEmail.textContent = (adminUser && adminUser.email) || 'contacto@familia.local';
 
@@ -1701,7 +1948,7 @@ function renderFamilyChildrenCards() {
                   ✏️ Editar
                 </button>
               </div>
-              <p class="family-card-devname">${cleanDevName} • <span style="font-family: monospace;">${dev.id}</span></p>
+              <p class="family-card-devname">${cleanDevName} • <span style="color: #94a3b8; font-size: 0.74rem;">${getFriendlyDeviceSerial(dev)}</span></p>
             </div>
           </div>
           <span class="status-indicator ${isOnline ? 'online' : 'offline'}">
@@ -2277,17 +2524,18 @@ function renderMultimediaGrid(filter = 'all') {
   const container = document.getElementById('multimediaGridContainer');
   if (!container) return;
 
-  let filtered = multimediaItems;
-  if (filter === 'image') filtered = multimediaItems.filter(item => item.type === 'image');
-  if (filter === 'video') filtered = multimediaItems.filter(item => item.type === 'video');
-  if (filter === 'audio') filtered = multimediaItems.filter(item => item.type === 'audio');
+  let filtered = multimediaItems.filter(item => matchesDateFilter(item.timestamp, selectedMultimediaDate));
+  if (filter === 'image') filtered = filtered.filter(item => item.type === 'image');
+  if (filter === 'video') filtered = filtered.filter(item => item.type === 'video');
+  if (filter === 'audio') filtered = filtered.filter(item => item.type === 'audio');
 
   if (filtered.length === 0) {
+    let dateLabel = selectedMultimediaDate === 'today' ? 'de hoy' : (selectedMultimediaDate === 'yesterday' ? 'de ayer' : (selectedMultimediaDate === 'all' ? '' : `del día ${selectedMultimediaDate}`));
     container.innerHTML = `
       <div style="grid-column: 1/-1; text-align: center; padding: 40px 20px; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.08);">
         <div style="font-size: 2.5rem; margin-bottom: 10px;">📂</div>
-        <h4 style="color: #fff; margin: 0 0 6px 0;">No hay elementos en esta categoría</h4>
-        <p style="color: var(--text-muted); font-size: 0.84rem; margin: 0;">Usa los botones superiores para capturar fotos, grabar videos o escuchar audios en vivo.</p>
+        <h4 style="color: #fff; margin: 0 0 6px 0;">No hay elementos multimedia ${dateLabel}</h4>
+        <p style="color: var(--text-muted); font-size: 0.84rem; margin: 0;">Prueba seleccionando otro día o pulsando "Todos".</p>
       </div>
     `;
     return;
@@ -2344,14 +2592,41 @@ function renderMultimediaGrid(filter = 'all') {
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px; font-size: 0.76rem; color: var(--text-secondary);">
           <span>📅 ${item.dateFormatted || 'Hoy'}</span>
-          <button class="btn btn-outline btn-sm" style="padding: 3px 10px; font-size: 0.75rem;" onclick="openMediaPreviewByIndex(${idx})">
-            ${isImg ? '🔍 Ver' : isVid ? '▶️ Reproducir' : '🔊 Escuchar'}
-          </button>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button class="btn btn-outline btn-sm" style="padding: 3px 10px; font-size: 0.75rem;" onclick="openMediaPreviewByIndex(${idx})">
+              ${isImg ? '🔍 Ver' : isVid ? '▶️ Reproducir' : '🔊 Escuchar'}
+            </button>
+            <button class="btn btn-outline btn-sm" style="padding: 3px 8px; font-size: 0.75rem; color: #f87171; border-color: rgba(239, 68, 68, 0.4);" onclick="deleteMultimediaItemClick('${item.id}')" title="Eliminar registro">
+              🗑️
+            </button>
+          </div>
         </div>
       </div>
     `;
   }).join('');
 }
+
+window.deleteMultimediaItemClick = async function(mediaId) {
+  if (!currentDevice) return;
+  if (!confirm('¿Deseas eliminar este registro multimedia permanentemente?')) return;
+  try {
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/multimedia/${encodeURIComponent(mediaId)}`, {
+      method: 'DELETE'
+    });
+    if (res.ok) {
+      multimediaItems = multimediaItems.filter(m => m.id !== mediaId);
+      const box = document.getElementById('multimediaPreviewBox');
+      if (box) box.style.display = 'none';
+      renderMultimediaGrid(activeMultimediaFilter || 'all');
+      showToast('Archivo multimedia eliminado correctamente', 'success');
+    } else {
+      showToast('No se pudo eliminar el archivo', 'danger');
+    }
+  } catch (err) {
+    console.error('Error eliminando multimedia:', err);
+    showToast('Error de conexión', 'danger');
+  }
+};
 
 function openMediaPreviewByIndex(index) {
   const item = multimediaItems[index];
@@ -2557,6 +2832,430 @@ function setupHistoryTabFilters() {
   });
 }
 
+function setupDateFilterListeners() {
+  // 1. Multimedia Date Filters
+  const mediaBtnToday = document.getElementById('btnMediaDateToday');
+  const mediaBtnYesterday = document.getElementById('btnMediaDateYesterday');
+  const mediaBtnAll = document.getElementById('btnMediaDateAll');
+  const mediaInputDate = document.getElementById('inputMediaDate');
+  const mediaBtns = [mediaBtnToday, mediaBtnYesterday, mediaBtnAll];
+
+  function setMediaDateActive(activeBtn, dateValue) {
+    mediaBtns.forEach(b => { if (b) b.classList.remove('active'); });
+    if (activeBtn) activeBtn.classList.add('active');
+    selectedMultimediaDate = dateValue;
+    if (typeof fetchAndRenderMultimediaGallery === 'function') {
+      renderMultimediaGrid(activeMultimediaFilter || 'all');
+    }
+  }
+
+  if (mediaBtnToday) {
+    mediaBtnToday.addEventListener('click', () => {
+      if (mediaInputDate) mediaInputDate.value = '';
+      setMediaDateActive(mediaBtnToday, 'today');
+    });
+  }
+  if (mediaBtnYesterday) {
+    mediaBtnYesterday.addEventListener('click', () => {
+      if (mediaInputDate) mediaInputDate.value = '';
+      setMediaDateActive(mediaBtnYesterday, 'yesterday');
+    });
+  }
+  if (mediaBtnAll) {
+    mediaBtnAll.addEventListener('click', () => {
+      if (mediaInputDate) mediaInputDate.value = '';
+      setMediaDateActive(mediaBtnAll, 'all');
+    });
+  }
+  if (mediaInputDate) {
+    mediaInputDate.addEventListener('change', (e) => {
+      const val = e.target.value;
+      if (val) {
+        mediaBtns.forEach(b => { if (b) b.classList.remove('active'); });
+        selectedMultimediaDate = val;
+        if (typeof fetchAndRenderMultimediaGallery === 'function') {
+          renderMultimediaGrid(activeMultimediaFilter || 'all');
+        }
+      }
+    });
+  }
+
+  // 2. History Date Filters
+  const histBtnToday = document.getElementById('btnHistoryDateToday');
+  const histBtnYesterday = document.getElementById('btnHistoryDateYesterday');
+  const histBtnAll = document.getElementById('btnHistoryDateAll');
+  const histInputDate = document.getElementById('inputHistoryDate');
+  const histBtns = [histBtnToday, histBtnYesterday, histBtnAll];
+
+  function setHistDateActive(activeBtn, dateValue) {
+    histBtns.forEach(b => { if (b) b.classList.remove('active'); });
+    if (activeBtn) activeBtn.classList.add('active');
+    selectedHistoryDate = dateValue;
+    renderHistoryTab();
+  }
+
+  if (histBtnToday) {
+    histBtnToday.addEventListener('click', () => {
+      if (histInputDate) histInputDate.value = '';
+      setHistDateActive(histBtnToday, 'today');
+    });
+  }
+  if (histBtnYesterday) {
+    histBtnYesterday.addEventListener('click', () => {
+      if (histInputDate) histInputDate.value = '';
+      setHistDateActive(histBtnYesterday, 'yesterday');
+    });
+  }
+  if (histBtnAll) {
+    histBtnAll.addEventListener('click', () => {
+      if (histInputDate) histInputDate.value = '';
+      setHistDateActive(histBtnAll, 'all');
+    });
+  }
+  if (histInputDate) {
+    histInputDate.addEventListener('change', (e) => {
+      const val = e.target.value;
+      if (val) {
+        histBtns.forEach(b => { if (b) b.classList.remove('active'); });
+        selectedHistoryDate = val;
+        renderHistoryTab();
+      }
+    });
+  }
+}
+
+function setupSoundSettingsListeners() {
+  const toggleSound = document.getElementById('settingsToggleSoundNotifications');
+  const btnTestSound = document.getElementById('btnTestNotificationSound');
+
+  if (toggleSound) {
+    toggleSound.checked = notificationSoundEnabled;
+    toggleSound.addEventListener('change', (e) => {
+      notificationSoundEnabled = Boolean(e.target.checked);
+      localStorage.setItem('kidsshield_sound_enabled', notificationSoundEnabled ? 'true' : 'false');
+      if (notificationSoundEnabled) {
+        showToast('🔊 Sonido de notificaciones activado', 'success');
+        playAlertSound(true);
+      } else {
+        showToast('🔇 Sonido de notificaciones silenciado', 'info');
+      }
+    });
+  }
+
+  if (btnTestSound) {
+    btnTestSound.addEventListener('click', () => {
+      playAlertSound(true);
+      showToast('🔔 Probando sonido de alerta...', 'info');
+    });
+  }
+}
+
+// ----------------------------------------------------------------
+// Historial de Tiempo de Uso de Aplicaciones por Fecha
+// ----------------------------------------------------------------
+async function fetchAndRenderAppUsage(date = 'today') {
+  selectedAppUsageDate = date;
+  const container = document.getElementById('appUsageListContainer');
+  if (!container) return;
+
+  if (!currentDevice) {
+    container.innerHTML = `<div style="text-align: center; padding: 24px; color: var(--text-muted);">Sin dispositivo seleccionado</div>`;
+    return;
+  }
+
+  const childName = currentDevice.childName || currentDevice.name || 'este menor';
+  container.innerHTML = `
+    <div style="text-align: center; padding: 20px 14px; color: var(--text-muted);">
+      <div style="font-size: 1.4rem; margin-bottom: 4px;">⏳</div>
+      <p style="font-size: 0.8rem; margin: 0;">Consultando aplicaciones de ${childName}...</p>
+    </div>
+  `;
+
+  try {
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/app-usage?date=${encodeURIComponent(date)}`);
+    if (res.ok) {
+      const data = await res.json();
+      const apps = data.apps || [];
+      const totalMins = data.totalScreenTimeMinutes || 0;
+
+      if (apps.length === 0 || totalMins === 0) {
+        let dateLabel = date === 'today' ? 'de hoy' : (date === 'yesterday' ? 'de ayer' : `del ${date}`);
+        container.innerHTML = `
+          <div style="text-align: center; padding: 24px 16px; background: rgba(255,255,255,0.02); border-radius: 10px; border: 1px dashed rgba(255,255,255,0.08);">
+            <div style="font-size: 2rem; margin-bottom: 6px;">📱</div>
+            <p style="color: #cbd5e1; font-size: 0.88rem; margin: 0 0 4px 0;">Sin uso registrado ${dateLabel}</p>
+            <p style="color: var(--text-muted); font-size: 0.78rem; margin: 0;">${childName} no tiene aplicaciones abiertas en esta fecha o el teléfono estuvo en reposo.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = apps.filter(a => a.timeMinutes > 0).map(a => {
+        const percent = totalMins > 0 ? Math.min(100, Math.round((a.timeMinutes / totalMins) * 100)) : 0;
+        const hasLimit = a.limitMinutes > 0;
+        const isOverLimit = hasLimit && a.timeMinutes >= a.limitMinutes;
+        const barColor = isOverLimit ? '#ef4444' : (a.isBlocked ? '#f87171' : '#6366f1');
+
+        return `
+          <div class="app-usage-row" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.3rem;">${a.icon || '📱'}</span>
+                <div>
+                  <span style="font-weight: 600; font-size: 0.9rem; color: #fff;">${a.name}</span>
+                  <span style="font-size: 0.74rem; color: var(--text-muted); margin-left: 6px;">${a.category || 'App'}</span>
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <span style="font-weight: 700; font-size: 0.88rem; color: ${isOverLimit ? '#f87171' : '#a5b4fc'};">${formatMinutes(a.timeMinutes)}</span>
+                ${hasLimit ? `<div style="font-size: 0.72rem; color: ${isOverLimit ? '#f87171' : '#94a3b8'};">Límite: ${formatMinutes(a.limitMinutes)} ${isOverLimit ? '(Agotado)' : ''}</div>` : ''}
+              </div>
+            </div>
+            <!-- Barra de progreso visual -->
+            <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden;">
+              <div style="width: ${percent}%; height: 100%; background: ${barColor}; border-radius: 999px; transition: width 0.4s ease;"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  } catch (err) {
+    console.error('Error cargando app-usage:', err);
+    container.innerHTML = `<div style="text-align: center; padding: 16px; color: #f87171; font-size: 0.85rem;">Error al cargar tiempo de apps</div>`;
+  }
+}
+
+// ----------------------------------------------------------------
+// Registro de Teclado, Búsquedas y Mensajes (Keylogger Ético)
+// ----------------------------------------------------------------
+let keystrokesCache = [];
+
+async function fetchAndRenderKeystrokes(date = 'today') {
+  selectedKeystrokesDate = date;
+  const container = document.getElementById('keystrokesListContainer');
+  if (!container) return;
+
+  if (!currentDevice) {
+    container.innerHTML = `<div style="text-align: center; padding: 40px; color: var(--text-muted);"><span style="font-size: 2rem;">⌨️</span><br>Sin dispositivo seleccionado</div>`;
+    return;
+  }
+
+  container.innerHTML = `<div style="text-align: center; padding: 30px; color: var(--text-muted);"><span style="font-size: 1.5rem;">⏳</span><br>Cargando registros de texto...</div>`;
+
+  try {
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/keystrokes?date=${encodeURIComponent(date)}`);
+    if (res.ok) {
+      const data = await res.json();
+      keystrokesCache = data.entries || [];
+      renderKeystrokesList();
+    } else {
+      container.innerHTML = `<div style="text-align: center; padding: 30px; color: #f87171;">No se pudieron consultar los registros de teclado</div>`;
+    }
+  } catch (err) {
+    console.error('Error cargando keystrokes:', err);
+    container.innerHTML = `<div style="text-align: center; padding: 30px; color: #f87171;">Error al consultar registros de teclado</div>`;
+  }
+}
+
+function renderKeystrokesList() {
+  const container = document.getElementById('keystrokesListContainer');
+  if (!container) return;
+
+  let filtered = keystrokesCache;
+
+  // Filtro de app
+  if (keystrokesFilterApp && keystrokesFilterApp !== 'all') {
+    filtered = filtered.filter(item => {
+      const pkg = (item.package || '').toLowerCase();
+      const app = (item.appName || '').toLowerCase();
+      return pkg.includes(keystrokesFilterApp) || app.includes(keystrokesFilterApp);
+    });
+  }
+
+  // Filtro de búsqueda
+  if (keystrokesSearchQuery) {
+    const q = keystrokesSearchQuery.toLowerCase();
+    filtered = filtered.filter(item => (item.text || '').toLowerCase().includes(q));
+  }
+
+  if (filtered.length === 0) {
+    let dateLabel = selectedKeystrokesDate === 'today' ? 'de hoy' : (selectedKeystrokesDate === 'yesterday' ? 'de ayer' : (selectedKeystrokesDate === 'all' ? '' : `del día ${selectedKeystrokesDate}`));
+    container.innerHTML = `
+      <div style="text-align: center; padding: 40px 20px; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.08);">
+        <div style="font-size: 2.5rem; margin-bottom: 10px;">⌨️</div>
+        <h4 style="color: #fff; margin: 0 0 6px 0;">No hay textos registrados ${dateLabel}</h4>
+        <p style="color: var(--text-muted); font-size: 0.84rem; margin: 0;">Los textos que el menor escriba en redes sociales, WhatsApp o búsquedas aparecerán aquí en tiempo real.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = filtered.map(item => {
+    const isAlert = Boolean(item.isAlert);
+    const borderStyle = isAlert ? 'border: 1px solid rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.06);' : 'border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.025);';
+
+    let appIcon = '📱';
+    const pkgLower = (item.package || '').toLowerCase();
+    if (pkgLower.includes('whatsapp')) appIcon = '💬';
+    else if (pkgLower.includes('instagram')) appIcon = '📸';
+    else if (pkgLower.includes('chrome') || pkgLower.includes('browser')) appIcon = '🌐';
+    else if (pkgLower.includes('youtube')) appIcon = '🎬';
+    else if (pkgLower.includes('tiktok')) appIcon = '🎵';
+
+    return `
+      <div class="keystroke-card" style="border-radius: 10px; padding: 12px 14px; ${borderStyle}">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.1rem;">${appIcon}</span>
+            <span style="font-weight: 600; font-size: 0.86rem; color: #f1f5f9;">${item.appName || 'Aplicación'}</span>
+            ${isAlert ? `<span style="font-size: 0.72rem; background: rgba(239, 68, 68, 0.25); color: #fca5a5; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid rgba(239, 68, 68, 0.35);">⚠️ Alerta de Riesgo</span>` : ''}
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 0.76rem; color: var(--text-muted);">${item.time || ''} • ${item.date || ''}</span>
+            <button class="btn btn-outline btn-sm" style="padding: 2px 6px; font-size: 0.72rem; color: #f87171; border-color: rgba(239, 68, 68, 0.35); cursor: pointer;" onclick="deleteKeystrokeItemClick('${item.id}')" title="Eliminar este texto">
+              🗑️
+            </button>
+          </div>
+        </div>
+        <div style="background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 8px; font-size: 0.88rem; color: #fff; line-height: 1.4; word-break: break-word;">
+          "${item.text}"
+        </div>
+        ${isAlert && item.alertCategory ? `<div style="font-size: 0.74rem; color: #f87171; margin-top: 5px;">🚨 Motivo: ${item.alertCategory}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+window.deleteKeystrokeItemClick = async function(keyId) {
+  if (!currentDevice) return;
+  if (!confirm('¿Eliminar este registro de texto?')) return;
+  try {
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/keystrokes/${encodeURIComponent(keyId)}`, {
+      method: 'DELETE'
+    });
+    if (res.ok) {
+      keystrokesCache = keystrokesCache.filter(k => k.id !== keyId);
+      renderKeystrokesList();
+      showToast('Registro de texto eliminado', 'success');
+    } else {
+      showToast('No se pudo eliminar el registro', 'danger');
+    }
+  } catch (err) {
+    showToast('Error de conexión al eliminar', 'danger');
+  }
+};
+
+function setupAppUsageAndKeystrokesListeners() {
+  // 1. App Usage Date Listeners
+  const btnAppToday = document.getElementById('btnAppUsageToday');
+  const btnAppYesterday = document.getElementById('btnAppUsageYesterday');
+  const inputAppDate = document.getElementById('inputAppUsageDate');
+  const appBtns = [btnAppToday, btnAppYesterday];
+
+  function setAppUsageActive(btn, dateVal) {
+    appBtns.forEach(b => { if (b) b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+    fetchAndRenderAppUsage(dateVal);
+  }
+
+  if (btnAppToday) {
+    btnAppToday.addEventListener('click', () => {
+      if (inputAppDate) inputAppDate.value = '';
+      setAppUsageActive(btnAppToday, 'today');
+    });
+  }
+  if (btnAppYesterday) {
+    btnAppYesterday.addEventListener('click', () => {
+      if (inputAppDate) inputAppDate.value = '';
+      setAppUsageActive(btnAppYesterday, 'yesterday');
+    });
+  }
+  if (inputAppDate) {
+    inputAppDate.addEventListener('change', (e) => {
+      if (e.target.value) {
+        appBtns.forEach(b => { if (b) b.classList.remove('active'); });
+        fetchAndRenderAppUsage(e.target.value);
+      }
+    });
+  }
+
+  // 2. Keystrokes Listeners
+  const btnKeyToday = document.getElementById('btnKeyDateToday');
+  const btnKeyYesterday = document.getElementById('btnKeyDateYesterday');
+  const btnKeyAll = document.getElementById('btnKeyDateAll');
+  const inputKeyDate = document.getElementById('inputKeyDate');
+  const keyBtns = [btnKeyToday, btnKeyYesterday, btnKeyAll];
+
+  function setKeyDateActive(btn, dateVal) {
+    keyBtns.forEach(b => { if (b) b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+    fetchAndRenderKeystrokes(dateVal);
+  }
+
+  if (btnKeyToday) {
+    btnKeyToday.addEventListener('click', () => {
+      if (inputKeyDate) inputKeyDate.value = '';
+      setKeyDateActive(btnKeyToday, 'today');
+    });
+  }
+  if (btnKeyYesterday) {
+    btnKeyYesterday.addEventListener('click', () => {
+      if (inputKeyDate) inputKeyDate.value = '';
+      setKeyDateActive(btnKeyYesterday, 'yesterday');
+    });
+  }
+  if (btnKeyAll) {
+    btnKeyAll.addEventListener('click', () => {
+      if (inputKeyDate) inputKeyDate.value = '';
+      setKeyDateActive(btnKeyAll, 'all');
+    });
+  }
+  if (inputKeyDate) {
+    inputKeyDate.addEventListener('change', (e) => {
+      if (e.target.value) {
+        keyBtns.forEach(b => { if (b) b.classList.remove('active'); });
+        fetchAndRenderKeystrokes(e.target.value);
+      }
+    });
+  }
+
+  const searchKeyInput = document.getElementById('inputKeySearch');
+  if (searchKeyInput) {
+    searchKeyInput.addEventListener('input', (e) => {
+      keystrokesSearchQuery = e.target.value.trim();
+      renderKeystrokesList();
+    });
+  }
+
+  const selectKeyApp = document.getElementById('selectKeyAppFilter');
+  if (selectKeyApp) {
+    selectKeyApp.addEventListener('change', (e) => {
+      keystrokesFilterApp = e.target.value;
+      renderKeystrokesList();
+    });
+  }
+
+  const btnKeyClearAll = document.getElementById('btnKeyClearAll');
+  if (btnKeyClearAll) {
+    btnKeyClearAll.addEventListener('click', async () => {
+      if (!currentDevice) return;
+      if (!confirm('¿Estás seguro de que deseas vaciar todos los textos y búsquedas capturados de este menor?')) return;
+      try {
+        const res = await apiFetch(`/api/devices/${currentDevice.id}/keystrokes`, { method: 'DELETE' });
+        if (res.ok) {
+          keystrokesCache = [];
+          renderKeystrokesList();
+          showToast('Registro de textos vaciado con éxito', 'success');
+        } else {
+          showToast('No se pudo vaciar el registro', 'danger');
+        }
+      } catch (err) {
+        showToast('Error de conexión al vaciar textos', 'danger');
+      }
+    });
+  }
+}
+
 async function renderHistoryTab() {
   const feed = document.getElementById('historyTabActivityFeed');
   if (!feed) return;
@@ -2629,8 +3328,11 @@ async function renderHistoryTab() {
     return;
   }
 
+  // 3.5 Filtrar según fecha seleccionada (Opción 1: Hoy, Ayer, Todos o Fecha específica)
+  const dateFiltered = unified.filter(item => matchesDateFilter(item.sortTimestamp || item.timestamp, selectedHistoryDate));
+
   // 4. Filtrar según píldora seleccionada: 'all', 'blocked', 'app_open', 'alert', 'gps'
-  const filtered = unified.filter(item => {
+  const filtered = dateFiltered.filter(item => {
     if (activeHistoryTabFilter === 'all') return true;
     const type = (item.type || '').toLowerCase();
     const msg = (item.message || '').toLowerCase();
@@ -2669,9 +3371,10 @@ async function renderHistoryTab() {
     else if (activeHistoryTabFilter === 'alert') filterLabel = '⚠️ Alertas';
     else if (activeHistoryTabFilter === 'gps') filterLabel = '📍 GPS y Ubicación';
 
+    let dateText = selectedHistoryDate === 'today' ? 'de hoy' : (selectedHistoryDate === 'yesterday' ? 'de ayer' : (selectedHistoryDate === 'all' ? '' : `del día ${selectedHistoryDate}`));
     feed.innerHTML = `
       <div style="text-align: center; padding: 36px 16px; color: var(--text-muted); font-size: 0.88rem;">
-        No hay registros para ${filterLabel}.
+        No hay registros ${dateText} para ${filterLabel}. Prueba seleccionando otro día o pulsando "Todos".
       </div>
     `;
     return;
@@ -2728,6 +3431,72 @@ async function renderHistoryTab() {
       </div>
     `;
   }).join('');
+
+  // 5. Cargar desglose de uso de aplicaciones para la fecha de historial seleccionada
+  fetchAndRenderHistoryAppUsage(selectedHistoryDate);
+}
+
+async function fetchAndRenderHistoryAppUsage(date = 'today') {
+  const container = document.getElementById('historyAppUsageListContainer');
+  if (!container) return;
+
+  if (!currentDevice) {
+    container.innerHTML = `<div style="text-align: center; padding: 24px; color: var(--text-muted);">Sin dispositivo seleccionado</div>`;
+    return;
+  }
+
+  try {
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/app-usage?date=${encodeURIComponent(date)}`);
+    if (res.ok) {
+      const data = await res.json();
+      const apps = data.apps || [];
+      const totalMins = data.totalScreenTimeMinutes || 0;
+
+      if (apps.length === 0 || totalMins === 0) {
+        let dateLabel = date === 'today' ? 'de hoy' : (date === 'yesterday' ? 'de ayer' : (date === 'all' ? '' : `del día ${date}`));
+        container.innerHTML = `
+          <div style="text-align: center; padding: 24px 16px; background: rgba(255,255,255,0.02); border-radius: 10px; border: 1px dashed rgba(255,255,255,0.08);">
+            <div style="font-size: 1.8rem; margin-bottom: 4px;">📱</div>
+            <p style="color: #cbd5e1; font-size: 0.88rem; margin: 0 0 4px 0;">Sin uso de aplicaciones registrado ${dateLabel}</p>
+            <p style="color: var(--text-muted); font-size: 0.78rem; margin: 0;">No se abrieron aplicaciones en esta fecha o el teléfono estuvo en reposo.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = apps.filter(a => a.timeMinutes > 0).map(a => {
+        const percent = totalMins > 0 ? Math.min(100, Math.round((a.timeMinutes / totalMins) * 100)) : 0;
+        const hasLimit = a.limitMinutes > 0;
+        const isOverLimit = hasLimit && a.timeMinutes >= a.limitMinutes;
+        const barColor = isOverLimit ? '#ef4444' : (a.isBlocked ? '#f87171' : '#6366f1');
+
+        return `
+          <div class="app-usage-row" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.3rem;">${a.icon || '📱'}</span>
+                <div>
+                  <span style="font-weight: 600; font-size: 0.9rem; color: #fff;">${a.name}</span>
+                  <span style="font-size: 0.74rem; color: var(--text-muted); margin-left: 6px;">${a.category || 'App'}</span>
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <span style="font-weight: 700; font-size: 0.88rem; color: ${isOverLimit ? '#f87171' : '#a5b4fc'};">${formatMinutes(a.timeMinutes)}</span>
+                ${hasLimit ? `<div style="font-size: 0.72rem; color: ${isOverLimit ? '#f87171' : '#94a3b8'};">Límite: ${formatMinutes(a.limitMinutes)} ${isOverLimit ? '(Agotado)' : ''}</div>` : ''}
+              </div>
+            </div>
+            <!-- Barra de progreso visual -->
+            <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden;">
+              <div style="width: ${percent}%; height: 100%; background: ${barColor}; border-radius: 999px; transition: width 0.4s ease;"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  } catch (err) {
+    console.error('Error cargando app-usage en historial:', err);
+    container.innerHTML = `<div style="text-align: center; padding: 16px; color: #f87171; font-size: 0.85rem;">Error al consultar tiempo de apps</div>`;
+  }
 }
 
 // ----------------------------------------------------------------
@@ -2777,6 +3546,303 @@ function renderSettingsTab() {
   if (bedtimeStart) bedtimeStart.value = currentDevice.bedtimeStart || '21:30';
   if (bedtimeEnd) bedtimeEnd.value = currentDevice.bedtimeEnd || '07:00';
   if (parentPin) parentPin.value = currentDevice.parentPin || '1234';
+}
+
+// =========================================================================
+// PESTAÑA: INFORMES MENSUALES DE USO Y BIENESTAR DIGITAL
+// =========================================================================
+let selectedReportMonth = null;
+let selectedReportYear = null;
+let currentMonthlyReportData = null;
+
+function initMonthlyReportsView() {
+  populateReportMonthSelector();
+  fetchAndRenderMonthlyReport();
+}
+
+function populateReportMonthSelector() {
+  const select = document.getElementById('reportsMonthSelect');
+  if (!select) return;
+
+  const now = new Date();
+  const currentM = now.getMonth() + 1;
+  const currentY = now.getFullYear();
+
+  if (!selectedReportMonth) selectedReportMonth = currentM;
+  if (!selectedReportYear) selectedReportYear = currentY;
+
+  const monthNames = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+
+  select.innerHTML = '';
+  // Generar opciones para los últimos 6 meses
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(currentY, (currentM - 1) - i, 1);
+    const mNum = d.getMonth() + 1;
+    const yNum = d.getFullYear();
+    const opt = document.createElement('option');
+    opt.value = `${yNum}-${mNum}`;
+    opt.textContent = `${monthNames[d.getMonth()]} ${yNum}${i === 0 ? ' (Mes Actual)' : ''}`;
+    if (mNum === selectedReportMonth && yNum === selectedReportYear) {
+      opt.selected = true;
+    }
+    select.appendChild(opt);
+  }
+
+  if (!select._hasReportsChangeListener) {
+    select._hasReportsChangeListener = true;
+    select.addEventListener('change', (e) => {
+      const parts = e.target.value.split('-');
+      selectedReportYear = parseInt(parts[0], 10);
+      selectedReportMonth = parseInt(parts[1], 10);
+      fetchAndRenderMonthlyReport();
+    });
+  }
+}
+
+async function fetchAndRenderMonthlyReport() {
+  const contentArea = document.getElementById('monthlyReportContentArea');
+  if (!contentArea) return;
+
+  if (!currentDevice) {
+    contentArea.innerHTML = `
+      <div style="text-align: center; padding: 60px 20px; color: var(--text-muted);">
+        <div style="font-size: 2.8rem; margin-bottom: 12px;">📑</div>
+        <h3 style="color: #fff; font-size: 1.1rem; margin-bottom: 6px;">Selecciona un hijo o dispositivo</h3>
+        <p style="font-size: 0.85rem; max-width: 400px; margin: 0 auto; line-height: 1.5;">
+          Elige un menor en el selector superior para generar su informe ejecutivo mensual.
+        </p>
+      </div>
+    `;
+    return;
+  }
+
+  const now = new Date();
+  const reqYear = selectedReportYear || now.getFullYear();
+  const reqMonth = selectedReportMonth || (now.getMonth() + 1);
+
+  try {
+    const res = await apiFetch(`/api/reports/monthly?deviceId=${encodeURIComponent(currentDevice.id)}&year=${reqYear}&month=${reqMonth}`);
+    if (!res.ok) {
+      throw new Error(`Error del servidor (${res.status})`);
+    }
+    const data = await res.json();
+    currentMonthlyReportData = data;
+
+    // Encabezado
+    const avatarEl = document.getElementById('reportChildAvatar');
+    if (avatarEl) avatarEl.textContent = data.avatar || currentDevice.avatar || '👦';
+
+    const titleEl = document.getElementById('reportChildTitle');
+    if (titleEl) titleEl.textContent = `Informe de Actividad Digital: ${data.childName}`;
+
+    const subtitleEl = document.getElementById('reportPeriodSubtitle');
+    if (subtitleEl) subtitleEl.textContent = `Período: ${data.periodLabel} • Dispositivo: ${getFriendlyDeviceSerial(currentDevice)}`;
+
+    // 4 KPIs
+    const kpiTotal = document.getElementById('reportKpiTotalTime');
+    if (kpiTotal) kpiTotal.textContent = data.totalHoursFormatted;
+
+    const kpiAvg = document.getElementById('reportKpiDailyAvg');
+    if (kpiAvg) kpiAvg.textContent = data.dailyAverageFormatted;
+
+    const kpiDays = document.getElementById('reportKpiActiveDays');
+    if (kpiDays) kpiDays.textContent = `${data.activeDays} días`;
+
+    const kpiAlerts = document.getElementById('reportKpiAlerts');
+    if (kpiAlerts) {
+      kpiAlerts.textContent = String(data.securityAlertsCount || 0);
+      kpiAlerts.style.color = (data.securityAlertsCount > 0) ? '#f87171' : '#10b981';
+    }
+
+    // Colores temáticos por categoría
+    const categoryColors = {
+      'Juegos': 'linear-gradient(90deg, #8b5cf6, #a78bfa)',
+      'Redes Sociales': 'linear-gradient(90deg, #ec4899, #f472b6)',
+      'Videos': 'linear-gradient(90deg, #ef4444, #f87171)',
+      'Navegación Web': 'linear-gradient(90deg, #3b82f6, #60a5fa)',
+      'Educación': 'linear-gradient(90deg, #10b981, #34d399)',
+      'Comunicación': 'linear-gradient(90deg, #06b6d4, #22d3ee)',
+      'Utilidades': 'linear-gradient(90deg, #64748b, #94a3b8)',
+      'Sistema': 'linear-gradient(90deg, #475569, #64748b)'
+    };
+
+    const categoryIcons = {
+      'Juegos': '🎮',
+      'Redes Sociales': '📱',
+      'Videos': '🎬',
+      'Navegación Web': '🌐',
+      'Educación': '🎓',
+      'Comunicación': '💬',
+      'Utilidades': '📁',
+      'Sistema': '⚙️'
+    };
+
+    // Desglose de Categorías
+    const catContainer = document.getElementById('reportCategoryBreakdownList');
+    if (catContainer) {
+      if (!data.categoryBreakdown || data.categoryBreakdown.length === 0 || data.totalMinutes === 0) {
+        catContainer.innerHTML = '<div style="color: #94a3b8; font-size: 0.84rem; padding: 12px 0;">Sin uso de pantalla registrado en este período.</div>';
+      } else {
+        catContainer.innerHTML = data.categoryBreakdown.filter(c => c.minutes > 0).map(cat => {
+          const barColor = categoryColors[cat.category] || 'linear-gradient(90deg, #6366f1, #8b5cf6)';
+          const icon = categoryIcons[cat.category] || '📁';
+          return `
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <div style="display: flex; justify-content: space-between; font-size: 0.82rem;">
+                <span style="font-weight: 600; color: #f1f5f9;">${icon} ${cat.category}</span>
+                <span style="color: #94a3b8;">${Math.floor(cat.minutes / 60)}h ${cat.minutes % 60}m <strong style="color: #e2e8f0; margin-left: 6px;">(${cat.percentage}%)</strong></span>
+              </div>
+              <div class="report-cat-progress-bar">
+                <div class="report-cat-progress-fill" style="background: ${barColor}; width: ${cat.percentage}%;"></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // Top Apps
+    const topAppsContainer = document.getElementById('reportTopAppsList');
+    if (topAppsContainer) {
+      if (!data.topApps || data.topApps.length === 0) {
+        topAppsContainer.innerHTML = '<div style="color: #94a3b8; font-size: 0.84rem; padding: 12px 0;">Sin aplicaciones utilizadas este mes.</div>';
+      } else {
+        topAppsContainer.innerHTML = data.topApps.map((app, idx) => `
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.05);">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 1.4rem;">${app.icon || '📱'}</span>
+              <div>
+                <div style="font-weight: 700; color: #fff; font-size: 0.88rem;">${app.name}</div>
+                <div style="font-size: 0.74rem; color: #94a3b8;">${app.category}</div>
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-weight: 700; color: #38bdf8; font-size: 0.88rem;">${Math.floor(app.minutes / 60)}h ${app.minutes % 60}m</div>
+              <div style="font-size: 0.72rem; color: #64748b;">${app.percentage}% del total</div>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    // Observaciones e Insights
+    const insightsContainer = document.getElementById('reportInsightsList');
+    if (insightsContainer) {
+      if (!data.insights || data.insights.length === 0) {
+        insightsContainer.innerHTML = '<li style="color: #cbd5e1; font-size: 0.84rem;">El uso se encuentra en niveles normales y estables.</li>';
+      } else {
+        insightsContainer.innerHTML = data.insights.map(ins => `
+          <li style="color: #cbd5e1; font-size: 0.84rem; line-height: 1.5;">${ins}</li>
+        `).join('');
+      }
+    }
+
+    // Registro de Alertas y Eventos
+    const securityContainer = document.getElementById('reportSecurityEventsList');
+    if (securityContainer) {
+      if (!data.securityAlerts || data.securityAlerts.length === 0) {
+        securityContainer.innerHTML = `
+          <div style="color: #34d399; font-size: 0.84rem; padding: 10px; background: rgba(16,185,129,0.08); border-radius: 8px; border: 1px solid rgba(16,185,129,0.2);">
+            ✅ Ningún incidente de riesgo o alerta crítica registrada en este mes.
+          </div>
+        `;
+      } else {
+        securityContainer.innerHTML = data.securityAlerts.map(ev => `
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(239,68,68,0.06); border-radius: 8px; border: 1px solid rgba(239,68,68,0.18); font-size: 0.82rem;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span>🚨</span>
+              <span style="color: #fca5a5;">${ev.message}</span>
+            </div>
+            <span style="color: #94a3b8; font-size: 0.74rem;">${ev.date} ${ev.time}</span>
+          </div>
+        `).join('');
+      }
+    }
+
+  } catch (err) {
+    console.error('Error cargando informe mensual:', err);
+    showToast('No se pudo cargar el informe mensual', 'danger');
+  }
+}
+
+function printMonthlyReport() {
+  if (!currentDevice) {
+    showToast('Selecciona un dispositivo primero', 'warning');
+    return;
+  }
+  window.print();
+}
+
+async function sendMonthlyReportEmailAction() {
+  if (!currentDevice) {
+    showToast('Selecciona un dispositivo primero', 'warning');
+    return;
+  }
+
+  let defaultEmail = 'padres@kidsshield.local';
+  try {
+    const storedUser = localStorage.getItem('kidsshield_admin_user');
+    if (storedUser) {
+      const u = JSON.parse(storedUser);
+      if (u && u.email) defaultEmail = u.email;
+    } else if (typeof currentUser !== 'undefined' && currentUser && currentUser.email) {
+      defaultEmail = currentUser.email;
+    }
+  } catch (e) {}
+
+  const recipient = prompt('Ingresa el correo electrónico donde deseas recibir el informe mensual:', defaultEmail);
+  if (!recipient || !recipient.trim()) return;
+
+  const targetEmail = recipient.trim();
+  const now = new Date();
+  const reqYear = selectedReportYear || now.getFullYear();
+  const reqMonth = selectedReportMonth || (now.getMonth() + 1);
+
+  showToast(`Enviando informe mensual a ${targetEmail}...`, 'info');
+
+  try {
+    const res = await apiFetch('/api/reports/monthly/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deviceId: currentDevice.id,
+        year: reqYear,
+        month: reqMonth,
+        recipientEmail: targetEmail
+      })
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(`✅ ${data.message}`, 'success');
+      if (data.previewUrl) {
+        console.log('[Reports] Vista previa del correo:', data.previewUrl);
+        const openPreview = confirm(`¡Informe enviado con éxito a ${targetEmail}!\n\n¿Deseas abrir la vista previa web del correo ahora?`);
+        if (openPreview) {
+          window.open(data.previewUrl, '_blank');
+        }
+      }
+    } else {
+      showToast(data.error || 'Error enviando el correo', 'danger');
+    }
+  } catch (err) {
+    console.error('Error enviando informe por correo:', err);
+    showToast('Error de red al despachar el correo', 'danger');
+  }
+}
+
+function setupMonthlyReportsListeners() {
+  const btnPrint = document.getElementById('btnPrintMonthlyReport');
+  if (btnPrint) btnPrint.addEventListener('click', printMonthlyReport);
+
+  const btnSendEmail = document.getElementById('btnSendMonthlyReportEmail');
+  if (btnSendEmail) btnSendEmail.addEventListener('click', sendMonthlyReportEmailAction);
+
+  const btnRefresh = document.getElementById('btnRefreshMonthlyReport');
+  if (btnRefresh) btnRefresh.addEventListener('click', fetchAndRenderMonthlyReport);
 }
 
 // =========================================================================
@@ -2843,10 +3909,29 @@ window.goToBillingSettings = function() {
   switchSettingsSubtab('billing');
 };
 
+function setupTimelineEvents() {
+  const typeFilterContainer = document.getElementById('timelineTypeFilter');
+  if (typeFilterContainer) {
+    typeFilterContainer.querySelectorAll('.filter-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        typeFilterContainer.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeTimelineTypeFilter = btn.dataset.type || 'all';
+        renderActivityFeed();
+      });
+    });
+  }
+}
+
 // Event Bindings
 function bindEvents() {
   try {
+  setupTimelineEvents();
   setupHistoryTabFilters();
+  setupDateFilterListeners();
+  setupSoundSettingsListeners();
+  setupAppUsageAndKeystrokesListeners();
+  setupMonthlyReportsListeners();
   // Modular Navigation Tabs (Desktop & Drawer)
   document.querySelectorAll('[data-view]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2875,6 +3960,15 @@ function bindEvents() {
 
   const navTabTimeline = document.getElementById('navTabTimeline');
   if (navTabTimeline) navTabTimeline.addEventListener('click', () => switchDashboardView('history'));
+
+  const navTabReports = document.getElementById('navTabReports');
+  if (navTabReports) navTabReports.addEventListener('click', () => switchDashboardView('reports'));
+
+  const drawerLinkReports = document.getElementById('drawerLinkReports');
+  if (drawerLinkReports) drawerLinkReports.addEventListener('click', () => switchDashboardView('reports'));
+
+  const sidebarNavReports = document.getElementById('sidebarNavReports');
+  if (sidebarNavReports) sidebarNavReports.addEventListener('click', () => switchDashboardView('reports'));
 
   const navTabLogout = document.getElementById('navTabLogout');
   if (navTabLogout) navTabLogout.addEventListener('click', logoutAdmin);
@@ -3004,7 +4098,8 @@ function bindEvents() {
     'mapDeviceSelect',
     'multimediaDeviceSelect',
     'historyDeviceSelect',
-    'settingsDeviceSelect'
+    'settingsDeviceSelect',
+    'reportsDeviceSelect'
   ];
   contextSelectors.forEach(id => {
     const sel = document.getElementById(id);
@@ -3203,11 +4298,33 @@ function bindEvents() {
       const bedtimeStart = document.getElementById('settingsBedtimeStart')?.value || '21:30';
       const bedtimeEnd = document.getElementById('settingsBedtimeEnd')?.value || '07:00';
       if (currentDevice) {
+        const inBedtime = bedtimeEnabled && isCurrentTimeInBedtimeClient(bedtimeStart, bedtimeEnd);
         currentDevice.bedtimeEnabled = bedtimeEnabled;
         currentDevice.bedtimeStart = bedtimeStart;
         currentDevice.bedtimeEnd = bedtimeEnd;
-        await updateRemoteConfig({ bedtimeEnabled, bedtimeStart, bedtimeEnd });
-        showToast('✅ Horario nocturno guardado correctamente', 'success');
+
+        const payload = { bedtimeEnabled, bedtimeStart, bedtimeEnd };
+        if (inBedtime) {
+          currentDevice.isLocked = true;
+          currentDevice.lockReason = 'Horario nocturno activo';
+          payload.isLocked = true;
+          payload.lockReason = 'Horario nocturno activo';
+          showToast('🌙 Horario nocturno guardado • La hora actual cae en el horario, teléfono bloqueado', 'warning');
+        } else if (currentDevice.lockReason && currentDevice.lockReason.includes('nocturno')) {
+          currentDevice.isLocked = false;
+          currentDevice.lockReason = '';
+          payload.isLocked = false;
+          payload.lockReason = '';
+          showToast('✅ Horario nocturno guardado • Teléfono fuera de horario nocturno, desbloqueado', 'success');
+        } else {
+          showToast('✅ Horario nocturno guardado correctamente', 'success');
+        }
+
+        await updateRemoteConfig(payload);
+        renderHero();
+        renderHeader();
+        renderScheduleControls();
+        renderAppList();
       }
     });
   }
@@ -3588,19 +4705,97 @@ function bindEvents() {
     showToast(`Nuevo límite diario: ${formatMinutes(mins)}${hasRemaining && payload.isLocked === false ? ' • Dispositivo desbloqueado' : ''}`, 'success');
   });
 
-  // Bedtime toggle
-  if (toggleBedtime) toggleBedtime.addEventListener('change', (e) => {
-    updateRemoteConfig({ bedtimeEnabled: e.target.checked });
-    showToast(e.target.checked ? 'Modo noche activado' : 'Modo noche desactivado', 'info');
-  });
+  // Bedtime toggle (Resumen general y tarjeta unificada)
+  const toggleBedtimeSchedule = document.getElementById('toggleBedtimeSchedule');
+  const handleBedtimeToggleChange = (isChecked) => {
+    if (!currentDevice) return;
+    const startVal = bedtimeStartInput ? bedtimeStartInput.value : (currentDevice.bedtimeStart || '21:30');
+    const endVal = bedtimeEndInput ? bedtimeEndInput.value : (currentDevice.bedtimeEnd || '07:00');
+    const inBedtime = isChecked && isCurrentTimeInBedtimeClient(startVal, endVal);
 
-  // Save Schedule
+    currentDevice.bedtimeEnabled = isChecked;
+    currentDevice.bedtimeStart = startVal;
+    currentDevice.bedtimeEnd = endVal;
+
+    const payload = {
+      bedtimeEnabled: isChecked,
+      bedtimeStart: startVal,
+      bedtimeEnd: endVal
+    };
+
+    if (inBedtime) {
+      currentDevice.isLocked = true;
+      currentDevice.lockReason = 'Horario nocturno activo';
+      payload.isLocked = true;
+      payload.lockReason = 'Horario nocturno activo';
+      showToast('🌙 Horario nocturno activo en este momento • Teléfono bloqueado', 'warning');
+    } else if (!isChecked && currentDevice.lockReason && currentDevice.lockReason.includes('nocturno')) {
+      currentDevice.isLocked = false;
+      currentDevice.lockReason = '';
+      payload.isLocked = false;
+      payload.lockReason = '';
+      showToast('☀️ Modo noche desactivado • Teléfono desbloqueado', 'info');
+    } else {
+      showToast(isChecked ? 'Modo noche activado para el horario programado' : 'Modo noche desactivado', 'info');
+    }
+
+    if (toggleBedtime) toggleBedtime.checked = isChecked;
+    if (toggleBedtimeSchedule) toggleBedtimeSchedule.checked = isChecked;
+    updateRemoteConfig(payload);
+    renderHero();
+    renderHeader();
+    renderScheduleControls();
+    renderAppList();
+  };
+
+  if (toggleBedtime) {
+    toggleBedtime.addEventListener('change', (e) => handleBedtimeToggleChange(e.target.checked));
+  }
+  if (toggleBedtimeSchedule) {
+    toggleBedtimeSchedule.addEventListener('change', (e) => handleBedtimeToggleChange(e.target.checked));
+  }
+
+  // Save Schedule en tarjeta unificada
   if (btnSaveSchedule) btnSaveSchedule.addEventListener('click', () => {
-    updateRemoteConfig({
-      bedtimeStart: bedtimeStartInput.value,
-      bedtimeEnd: bedtimeEndInput.value
-    });
-    showToast('Horarios de descanso guardados correctamente', 'success');
+    if (!currentDevice) return;
+    const startVal = bedtimeStartInput.value || '21:30';
+    const endVal = bedtimeEndInput.value || '07:00';
+    const isChecked = toggleBedtimeSchedule ? toggleBedtimeSchedule.checked : Boolean(currentDevice.bedtimeEnabled);
+    const inBedtime = isChecked && isCurrentTimeInBedtimeClient(startVal, endVal);
+
+    currentDevice.bedtimeEnabled = isChecked;
+    currentDevice.bedtimeStart = startVal;
+    currentDevice.bedtimeEnd = endVal;
+
+    const payload = {
+      bedtimeEnabled: isChecked,
+      bedtimeStart: startVal,
+      bedtimeEnd: endVal
+    };
+
+    if (inBedtime) {
+      currentDevice.isLocked = true;
+      currentDevice.lockReason = 'Horario nocturno activo';
+      payload.isLocked = true;
+      payload.lockReason = 'Horario nocturno activo';
+      showToast('🌙 La hora actual cae en el horario nocturno • Teléfono bloqueado de inmediato', 'warning');
+    } else if (currentDevice.lockReason && currentDevice.lockReason.includes('nocturno')) {
+      currentDevice.isLocked = false;
+      currentDevice.lockReason = '';
+      payload.isLocked = false;
+      payload.lockReason = '';
+      showToast('☀️ Teléfono fuera de horario nocturno • Desbloqueado', 'info');
+    } else {
+      showToast('Horarios de descanso guardados correctamente', 'success');
+    }
+
+    if (toggleBedtime) toggleBedtime.checked = isChecked;
+    if (toggleBedtimeSchedule) toggleBedtimeSchedule.checked = isChecked;
+    updateRemoteConfig(payload);
+    renderHero();
+    renderHeader();
+    renderScheduleControls();
+    renderAppList();
   });
 
   // App Search
@@ -3970,6 +5165,13 @@ function bindEvents() {
 
 // Multi-Device Functions
 async function loadDevicesList(selectedIdToSet) {
+  if (!adminAuthToken) {
+    devicesList = [];
+    currentDevice = null;
+    renderDeviceSelector();
+    return;
+  }
+
   try {
     const res = await apiFetch('/api/devices');
     if (res.ok) {
@@ -4041,7 +5243,10 @@ async function onDeviceSelected(deviceId, updateDropdown = true) {
   if (typeof currentDashboardView !== 'undefined' && currentDashboardView === 'map') {
     initDedicatedMap();
   }
-  if (currentDevice) {
+  if (typeof currentDashboardView !== 'undefined' && currentDashboardView === 'reports') {
+    fetchAndRenderMonthlyReport();
+  }
+  if (currentDevice && adminAuthToken) {
     renderFamilyOverviewCards();
     showToast(`Supervisando ahora: ${currentDevice.childName || currentDevice.name}`, 'info');
   }
@@ -4468,7 +5673,7 @@ async function fetchAndRenderGeofences() {
   if (!currentDevice) return;
 
   try {
-    const res = await fetch(`/api/devices/${currentDevice.id}/geofences`);
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/geofences`);
     if (res.ok) {
       const geofences = await res.json();
       renderGeofencesOnMap(geofences);
@@ -4538,7 +5743,17 @@ function renderGeofencesOnMap(geofences) {
       iconAnchor: [0, 0]
     });
 
-    const popupContent = `<b>${icon} ${cleanName}</b><br>Radio seguro: ${geo.radiusMeters || 200}m<br><span style="font-size:0.75rem; color:#94a3b8;">Alertas activas: Entrada y Salida</span>`;
+    const popupContent = `
+      <div style="min-width: 170px; padding: 4px 2px; color: #f8fafc;">
+        <div style="font-weight: 700; font-size: 0.92rem; margin-bottom: 3px; color: #fff;">${icon} ${cleanName}</div>
+        <div style="font-size: 0.8rem; color: #cbd5e1; margin-bottom: 4px;">Radio seguro: <strong>${geo.radiusMeters || 200}m</strong></div>
+        <div style="font-size: 0.72rem; color: #94a3b8; margin-bottom: 8px;">Alertas: Entrada y Salida</div>
+        <div style="display: flex; gap: 6px; margin-top: 6px;">
+          <button type="button" class="btn btn-xs" onclick="window.editGeofenceFromMap('${geo.id}')" style="padding: 4px 10px; font-size: 0.75rem; background: #6366f1; color: #fff; border: none; border-radius: 4px; cursor: pointer;">✏️ Modificar</button>
+          <button type="button" class="btn btn-xs" onclick="window.deleteGeofenceItem('${geo.id}')" style="padding: 4px 10px; font-size: 0.75rem; background: #ef4444; color: #fff; border: none; border-radius: 4px; cursor: pointer;">🗑️ Eliminar</button>
+        </div>
+      </div>
+    `;
 
     // Dibujar en mapa de resumen
     if (leafletMap) {
@@ -4578,6 +5793,13 @@ function renderGeofencesOnMap(geofences) {
       dedicatedGeofencesLayers.push(markerDedicated);
     }
   });
+
+  // Si no hay marcador de posición del dispositivo pero hay geocercas, centrar el mapa en la primera geocerca
+  if (leafletMap && !leafletMarker && geofences.length > 0) {
+    try {
+      leafletMap.setView([geofences[0].latitude, geofences[0].longitude], 13);
+    } catch (e) {}
+  }
 }
 
 function toggleGeofencesVisibility() {
@@ -4614,15 +5836,19 @@ function openGeofenceManagerModal() {
   const modal = document.getElementById('modalGeofenceManager');
   if (!modal) return;
 
-  // Precargar coordenadas si están disponibles
-  const latInput = document.getElementById('inputGeofenceLat');
-  const lngInput = document.getElementById('inputGeofenceLng');
-  if (currentDevice.location && typeof currentDevice.location.latitude === 'number') {
-    if (latInput) latInput.value = currentDevice.location.latitude;
-    if (lngInput) lngInput.value = currentDevice.location.longitude;
-  } else {
-    if (latInput && !latInput.value) latInput.value = -33.4420;
-    if (lngInput && !lngInput.value) lngInput.value = -70.6550;
+  // Precargar coordenadas si están disponibles y no estamos editando
+  if (!editingGeofenceId) {
+    const latInput = document.getElementById('inputGeofenceLat');
+    const lngInput = document.getElementById('inputGeofenceLng');
+    if (currentDevice.location && typeof currentDevice.location.latitude === 'number') {
+      if (latInput) latInput.value = currentDevice.location.latitude;
+      if (lngInput) lngInput.value = currentDevice.location.longitude;
+    } else {
+      if (latInput && !latInput.value) latInput.value = -33.4420;
+      if (lngInput && !lngInput.value) lngInput.value = -70.6550;
+    }
+    const btnSave = document.getElementById('btnSaveGeofence');
+    if (btnSave) btnSave.textContent = '➕ Guardar Lugar Seguro';
   }
 
   loadAndRenderGeofencesInModal();
@@ -4632,6 +5858,53 @@ function openGeofenceManagerModal() {
 function closeGeofenceManagerModal() {
   const modal = document.getElementById('modalGeofenceManager');
   if (modal) modal.classList.remove('active');
+  editingGeofenceId = null;
+  const btnSave = document.getElementById('btnSaveGeofence');
+  if (btnSave) btnSave.textContent = '➕ Guardar Lugar Seguro';
+}
+
+function editGeofenceFromMap(geoId) {
+  const geo = modalGeofencesList.find(g => String(g.id) === String(geoId));
+  if (!geo) {
+    // Si no está en cache, consultar y abrir
+    apiFetch(`/api/devices/${currentDevice.id}/geofences`)
+      .then(r => r.json())
+      .then(list => {
+        modalGeofencesList = list;
+        const found = list.find(g => String(g.id) === String(geoId));
+        if (found) fillGeofenceEditForm(found);
+      });
+    return;
+  }
+  fillGeofenceEditForm(geo);
+}
+window.editGeofenceFromMap = editGeofenceFromMap;
+
+function fillGeofenceEditForm(geo) {
+  editingGeofenceId = geo.id;
+  openGeofenceManagerModal();
+
+  const nameInput = document.getElementById('inputGeofenceName');
+  const latInput = document.getElementById('inputGeofenceLat');
+  const lngInput = document.getElementById('inputGeofenceLng');
+  const radiusInput = document.getElementById('rangeGeofenceRadius');
+  const radiusVal = document.getElementById('valGeofenceRadius');
+  const iconSelect = document.getElementById('selectGeofenceIcon');
+  const checkEntry = document.getElementById('checkGeofenceAlertEntry');
+  const checkExit = document.getElementById('checkGeofenceAlertExit');
+  const btnSave = document.getElementById('btnSaveGeofence');
+
+  if (nameInput) nameInput.value = getGeofenceCleanName(geo, geo.icon);
+  if (latInput) latInput.value = geo.latitude;
+  if (lngInput) lngInput.value = geo.longitude;
+  if (radiusInput) radiusInput.value = geo.radiusMeters || 200;
+  if (radiusVal) radiusVal.textContent = `${geo.radiusMeters || 200}m`;
+  if (iconSelect) iconSelect.value = geo.icon || '📍';
+  if (checkEntry) checkEntry.checked = geo.alertOnEntry !== false;
+  if (checkExit) checkExit.checked = geo.alertOnExit !== false;
+  if (btnSave) btnSave.textContent = '💾 Guardar Modificación';
+
+  showToast(`✏️ Editando: ${geo.name}`, 'info');
 }
 
 async function loadAndRenderGeofencesInModal() {
@@ -4641,7 +5914,7 @@ async function loadAndRenderGeofencesInModal() {
   listContainer.innerHTML = '<div style="color: #94a3b8; font-size: 0.85rem; padding: 12px 0;">Cargando lugares...</div>';
 
   try {
-    const res = await fetch(`/api/devices/${currentDevice.id}/geofences`);
+    const res = await apiFetch(`/api/devices/${currentDevice.id}/geofences`);
     if (res.ok) {
       modalGeofencesList = await res.json();
       renderGeofencesListInModal(modalGeofencesList);
@@ -4673,17 +5946,22 @@ function renderGeofencesListInModal(geofences) {
     const cleanName = getGeofenceCleanName(geo, icon);
     
     return `
-      <div class="geofence-saved-item" id="geoItem-${geo.id}">
-        <div class="geofence-item-meta">
-          <div class="geofence-item-icon">${icon}</div>
+      <div class="geofence-saved-item" id="geoItem-${geo.id}" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; margin-bottom: 8px;">
+        <div class="geofence-item-meta" style="display: flex; align-items: center; gap: 10px;">
+          <div class="geofence-item-icon" style="font-size: 1.4rem;">${icon}</div>
           <div>
-            <h5 class="geofence-item-name">${icon} ${cleanName}</h5>
-            <p class="geofence-item-sub">Radio: ${geo.radiusMeters || 200}m • Coords: ${Number(geo.latitude).toFixed(4)}, ${Number(geo.longitude).toFixed(4)}</p>
+            <h5 class="geofence-item-name" style="margin: 0; font-size: 0.9rem; color: #fff;">${icon} ${cleanName}</h5>
+            <p class="geofence-item-sub" style="margin: 2px 0 0 0; font-size: 0.76rem; color: var(--text-muted);">Radio: ${geo.radiusMeters || 200}m • Coords: ${Number(geo.latitude).toFixed(4)}, ${Number(geo.longitude).toFixed(4)}</p>
           </div>
         </div>
-        <button class="btn btn-danger-outline btn-sm" onclick="deleteGeofenceItem('${geo.id}')" title="Eliminar lugar seguro">
-          🗑️ Eliminar
-        </button>
+        <div style="display: flex; gap: 6px;">
+          <button type="button" class="btn btn-secondary-outline btn-sm" onclick="editGeofenceFromMap('${geo.id}')" title="Modificar este lugar seguro" style="padding: 4px 8px; font-size: 0.78rem;">
+            ✏️ Modificar
+          </button>
+          <button type="button" class="btn btn-danger-outline btn-sm" onclick="deleteGeofenceItem('${geo.id}')" title="Eliminar lugar seguro" style="padding: 4px 8px; font-size: 0.78rem;">
+            🗑️ Eliminar
+          </button>
+        </div>
       </div>
     `;
   }).join('');
@@ -4756,8 +6034,9 @@ async function saveNewGeofence() {
     const iconSelect = document.getElementById('selectGeofenceIcon');
     const icon = iconSelect ? iconSelect.value : '📍';
 
+    const geoId = editingGeofenceId || `GEO-${Date.now()}`;
     const payload = {
-      id: `GEO-${Date.now()}`,
+      id: geoId,
       name,
       icon,
       latitude: lat,
@@ -4774,10 +6053,14 @@ async function saveNewGeofence() {
     });
 
     if (res.ok) {
-      showToast(`✅ Lugar seguro "${name}" guardado con éxito`, 'success');
+      const actionMsg = editingGeofenceId ? 'modificado' : 'guardado';
+      showToast(`✅ Lugar seguro "${name}" ${actionMsg} con éxito`, 'success');
       if (nameInput) nameInput.value = '';
       if (latInput) latInput.value = '';
       if (lngInput) lngInput.value = '';
+      editingGeofenceId = null;
+      const btnSave = document.getElementById('btnSaveGeofence');
+      if (btnSave) btnSave.textContent = '➕ Guardar Lugar Seguro';
 
       if (tempGeofenceMarker) {
         try {
@@ -4856,6 +6139,7 @@ function syncChildContextSelectors() {
     'multimediaDeviceSelect',
     'historyDeviceSelect',
     'settingsDeviceSelect',
+    'reportsDeviceSelect',
     'deviceSelectorDropdown'
   ];
 
@@ -6041,7 +7325,7 @@ function setAdminLoggedInUI(user, sub) {
     btnAdminProfile.title = `Cuenta activa: ${user.name || user.email}`;
   }
 
-  if (adminFamilyIdBadge) adminFamilyIdBadge.textContent = user.familyId || 'FAM-DEFAULT-01';
+  if (adminFamilyIdBadge) adminFamilyIdBadge.textContent = '🛡️ Familia Protegida';
 
   if (sub) {
     currentSubscription = sub;
@@ -6079,11 +7363,23 @@ function setAdminLoggedInUI(user, sub) {
   // Conmutar a la vista de monitoreo y resumen general
   switchView('monitoring');
   switchDashboardView('overview');
+  authenticateWebSocket();
+  loadDevicesList().then(() => {
+    renderAll();
+    fetchAndRenderGeofences();
+  });
 }
 
 function setAdminLoggedOutUI() {
   if (adminLoggedOutSection) adminLoggedOutSection.style.display = 'block';
   if (adminLoggedInSection) adminLoggedInSection.style.display = 'none';
+
+  // Limpiar dispositivos y estado activo de supervisión
+  devicesList = [];
+  currentDevice = null;
+  localStorage.removeItem('kidsshield_active_device_id');
+  renderDeviceSelector();
+  renderNoDeviceState();
 
   // Portal View Auth Card sync
   const portalUserLoggedInBox = document.getElementById('portalUserLoggedInBox');
@@ -6195,16 +7491,30 @@ async function fetchDeviceData(deviceId = currentDevice.id) {
   }
 }
 
-// WebSocket live connection
+// WebSocket live connection con autenticación multi-familia
+function authenticateWebSocket() {
+  if (socket && socket.readyState === WebSocket.OPEN && adminAuthToken) {
+    socket.send(JSON.stringify({ type: 'AUTH_PARENT', token: adminAuthToken }));
+  }
+}
+
 function setupWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}`;
   try {
     socket = new WebSocket(wsUrl);
-    socket.onopen = () => console.log('🟢 Conectado al canal en tiempo real KidsShield');
+    socket.onopen = () => {
+      console.log('🟢 Conectado al canal en tiempo real KidsShield');
+      authenticateWebSocket();
+    };
     socket.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
+
+        if (data.type === 'AUTH_SUCCESS') {
+          console.log(`[WS] ✅ Conexión autenticada para la familia: ${data.payload?.familyId}`);
+          return;
+        }
 
         if (data.type === 'DEVICE_UPDATED' && currentDevice && data.payload.id === currentDevice.id) {
           currentDevice = data.payload;
@@ -6346,6 +7656,24 @@ function setupWebSocket() {
             showToast('📍 Ubicación GPS actualizada en el mapa', 'success');
             isManualLocationRequest = false;
           }
+        } else if (data.type === 'KEYSTROKE_ALERT') {
+          const entry = data.payload?.entry || {};
+          const targetDevId = data.payload?.deviceId;
+          playAlertSound();
+          triggerWebNotification('🚨 Alerta de Teclado KidsShield', `Texto riesgoso detectado en ${entry.appName || 'app'}: "${entry.text || ''}"`);
+          showToast(`🚨 Alerta en ${entry.appName || 'dispositivo'}: ${entry.alertCategory || 'palabra sospechosa'} detectada`, 'danger');
+          if (currentDevice && targetDevId === currentDevice.id) {
+            if (currentDashboardView === 'keystrokes') {
+              fetchAndRenderKeystrokes(selectedKeystrokesDate);
+            }
+          }
+        } else if (data.type === 'KEYSTROKE_LOGGED') {
+          const targetDevId = data.payload?.deviceId;
+          if (currentDevice && targetDevId === currentDevice.id) {
+            if (currentDashboardView === 'keystrokes') {
+              fetchAndRenderKeystrokes(selectedKeystrokesDate);
+            }
+          }
         } else if (data.type === 'PUSH_NOTIFICATION') {
           triggerWebNotification(data.payload.title || 'Alerta KidsShield', data.payload.body || 'Evento de seguridad detectado');
           showToast(data.payload.body, data.payload.type === 'alert' ? 'danger' : 'warning');
@@ -6454,11 +7782,15 @@ async function requestLocationNow() {
 }
 
 // Audio synthesizer for parent alerts
-function playAlertSound() {
+function playAlertSound(force = false) {
+  if (!force && !notificationSoundEnabled) return;
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 

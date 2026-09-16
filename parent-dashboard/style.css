@@ -5052,4 +5052,250 @@ body {
   transform: translateY(-1px);
 }
 
+/* ==========================================================================
+   REDISEÑO: GESTIÓN DE APLICACIONES INSTALADAS (APP-ROW & APP-LIST)
+   ========================================================================== */
+.app-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(30, 41, 59, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  transition: all 0.2s ease;
+  gap: 14px;
+}
+
+.app-row:hover {
+  background: rgba(30, 41, 59, 0.75);
+  border-color: rgba(99, 102, 241, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.app-row.is-blocked {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.07);
+}
+
+.app-info-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 220px;
+  flex: 1;
+}
+
+.app-icon-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.app-text-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.app-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.app-name {
+  font-weight: 700;
+  font-size: 0.94rem;
+  color: #f8fafc;
+  letter-spacing: -0.2px;
+}
+
+.app-tag-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+.app-time-sub {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.app-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.app-control-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-field-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.app-category-select,
+.app-limit-select {
+  background: rgba(15, 23, 42, 0.85);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.app-category-select:focus,
+.app-category-select:hover,
+.app-limit-select:focus,
+.app-limit-select:hover {
+  border-color: #6366f1;
+  background: rgba(30, 41, 59, 0.95);
+}
+
+.toggle-block-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.toggle-block-btn.btn-allowed {
+  background: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.toggle-block-btn.btn-allowed:hover {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: #10b981;
+  color: #fff;
+}
+
+.toggle-block-btn.btn-blocked {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.toggle-block-btn.btn-blocked:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: #ef4444;
+  color: #fff;
+}
+
+@media (max-width: 768px) {
+  .app-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .app-item-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
+/* ==========================================================================
+   ESTILOS PARA INFORMES MENSUALES Y MODO IMPRESIÓN
+   ========================================================================== */
+.printable-report-card {
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
+}
+
+.report-cat-progress-bar {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  height: 9px;
+  overflow: hidden;
+  position: relative;
+}
+
+.report-cat-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Reglas especiales de Impresión A4 para informes ejecutivos */
+@media print {
+  body {
+    background: #fff !important;
+    color: #1e293b !important;
+  }
+
+  .app-header,
+  .dashboard-sidebar,
+  .sidebar-nav,
+  .drawer-nav,
+  .filter-pills,
+  .btn,
+  button,
+  #btnPrintMonthlyReport,
+  #btnSendMonthlyReportEmail,
+  #btnRefreshMonthlyReport,
+  .child-context-select-wrapper {
+    display: none !important;
+  }
+
+  .dashboard-content-area,
+  .monitoring-tab-view,
+  #tabViewReports,
+  .panel-card {
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    display: block !important;
+  }
+
+  #monthlyReportContentArea {
+    background: #fff !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+    padding: 20px !important;
+  }
+
+  #monthlyReportContentArea * {
+    color: #1e293b !important;
+    text-shadow: none !important;
+  }
+}
+
+
 

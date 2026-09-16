@@ -81,6 +81,14 @@
         <span class="drawer-icon">🕒</span>
         <span>Historial</span>
       </button>
+      <button class="drawer-nav-item" id="drawerLinkKeystrokes" data-view="keystrokes">
+        <span class="drawer-icon">⌨️</span>
+        <span>Teclado & Textos</span>
+      </button>
+      <button class="drawer-nav-item" id="drawerLinkReports" data-view="reports">
+        <span class="drawer-icon">📑</span>
+        <span>Informes Mensuales</span>
+      </button>
       <button class="drawer-nav-item" id="drawerLinkSettings" data-view="settings">
         <span class="drawer-icon">⚙️</span>
         <span>Configuraciones</span>
@@ -126,6 +134,7 @@
         <button id="navTabMap" data-view="map"></button>
         <button id="navTabMultimedia" data-view="multimedia"></button>
         <button id="navTabHistory" data-view="history"></button>
+        <button id="navTabReports" data-view="reports"></button>
         <button id="navTabSettings" data-view="settings"></button>
         <button id="navTabLogout"></button>
         <button id="navTabPortal"></button>
@@ -449,6 +458,14 @@
               <span class="sidebar-icon">📋</span>
               <span class="sidebar-text">Historial</span>
             </button>
+            <button class="sidebar-nav-item" id="sidebarNavKeystrokes" data-view="keystrokes" title="Registro de teclado, textos y búsquedas">
+              <span class="sidebar-icon">⌨️</span>
+              <span class="sidebar-text">Teclado & Textos</span>
+            </button>
+            <button class="sidebar-nav-item" id="sidebarNavReports" data-view="reports" title="Informes mensuales de actividad y bienestar digital">
+              <span class="sidebar-icon">📑</span>
+              <span class="sidebar-text">Informes</span>
+            </button>
             <button class="sidebar-nav-item" id="sidebarNavSettings" data-view="settings" title="Configuraciones generales y PIN">
               <span class="sidebar-icon">⚙️</span>
               <span class="sidebar-text">Configuración</span>
@@ -599,12 +616,16 @@
                 <h2 class="panel-title">Gestión de Aplicaciones Instaladas</h2>
                 <p class="panel-subtitle">Detecta juegos, redes sociales, videos y bloquea el acceso individual</p>
               </div>
-              <div class="filter-pills" id="categoryFilter">
+              <div class="filter-pills" id="categoryFilter" style="display: flex; flex-wrap: wrap; gap: 6px;">
                 <button class="filter-pill active" data-filter="all">Todas</button>
                 <button class="filter-pill" data-filter="Juegos">🎮 Juegos</button>
-                <button class="filter-pill" data-filter="Redes Sociales">💬 Redes</button>
+                <button class="filter-pill" data-filter="Redes Sociales">📱 Redes</button>
                 <button class="filter-pill" data-filter="Videos">🎬 Videos</button>
                 <button class="filter-pill" data-filter="Navegación Web">🌐 Web</button>
+                <button class="filter-pill" data-filter="Educación">🎓 Educación</button>
+                <button class="filter-pill" data-filter="Comunicación">💬 Comunicación</button>
+                <button class="filter-pill" data-filter="Utilidades">📁 Utilidades</button>
+                <button class="filter-pill" data-filter="Sistema">⚙️ Sistema</button>
               </div>
             </div>
 
@@ -621,48 +642,29 @@
             </div>
           </div>
 
-          <!-- Live GPS Map Card -->
-          <div class="panel-card map-card" id="sectionGpsCard">
+          <!-- Schedule & Daily Limit Settings (Límites Diarios de Pantalla) -->
+          <div class="panel-card" style="margin-top: 18px;" id="sectionScheduleCard">
             <div class="panel-header" style="flex-wrap: wrap; gap: 8px;">
               <div>
-                <h2 class="panel-title">📍 Geolocalización Satelital (GPS Activo)</h2>
-                <p class="panel-subtitle" id="locationSubtitle">Rastreo de ubicación satelital continua ininterrumpible</p>
-              </div>
-              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                <span class="badge badge-accent" id="locationAccuracyBadge">Esperando GPS</span>
-                <button id="btnRefreshLocation" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 6px;" title="Actualizar posición satelital">
-                  <span id="btnRefreshLocationIcon">🔄</span>
-                  <span id="btnRefreshLocationText">Actualizar</span>
-                </button>
-                <div style="display: inline-flex; align-items: center; gap: 4px;">
-                  <button id="btnToggleRouteHistory" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 6px;" title="Trazar ruta del día">
-                    <span id="btnRouteHistoryIcon">🗺️</span>
-                    <span id="btnRouteHistoryText">Trazar Ruta</span>
-                  </button>
-                  <select id="selectRouteHistoryDayHome" class="device-select-custom" style="font-size: 0.8rem; padding: 5px 8px;" title="Seleccionar día de la traza">
-                    <option value="today" selected>Hoy</option>
-                    <option value="yesterday">Ayer</option>
-                    <option value="custom">Fecha...</option>
-                  </select>
-                  <input type="date" id="inputRouteHistoryDateHome" style="display: none; background: #1e293b; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 3px 6px; font-size: 0.78rem;">
-                </div>
-                <button id="btnToggleGeofences" class="btn btn-secondary btn-sm" title="Zonas seguras (Colegio, Casa)">
-                  <span>🏫 Geocercas</span>
-                </button>
+                <h2 class="panel-title">⏱️ Límites de Pantalla Diario</h2>
+                <p class="panel-subtitle">Establece el tope diario total de uso del teléfono móvil</p>
               </div>
             </div>
-            <div id="mapLeaflet" style="height: 280px; width: 100%; border-radius: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.08); background: #1e293b; z-index: 1;"></div>
-            <div class="location-footer-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 0.84rem;">
-              <span id="locationAddressText" style="color: var(--text-primary); font-weight: 500;">📍 Esperando primera coordenada GPS...</span>
-              <span id="locationLastUpdatedText" style="color: var(--text-muted);">Sin señal satelital aún</span>
-            </div>
-            <!-- Route History Panel -->
-            <div class="route-history-panel" id="routeHistoryPanel" style="display: none;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-weight: 600; font-size: 0.78rem; color: #93c5fd;">
-                <span>📍 Puntos de la Ruta Trazada:</span>
-                <span id="routePointsCountBadge" class="badge badge-accent">0 posiciones</span>
+
+            <div class="slider-control-group">
+              <div class="slider-header">
+                <span class="slider-label">Límite Diario Total:</span>
+                <span class="slider-val-badge" id="dailyLimitValText">2 horas 00 min</span>
               </div>
-              <div id="routeHistoryItemsList"></div>
+              <input type="range" id="dailyLimitRange" min="30" max="600" step="15" value="120" class="custom-range">
+              <div class="range-markers">
+                <span>30m</span>
+                <span>1h</span>
+                <span>2h</span>
+                <span>4h</span>
+                <span>6h</span>
+                <span>10h</span>
+              </div>
             </div>
           </div>
 
@@ -683,12 +685,19 @@
               </div>
             </div>
 
-            <!-- Filter by Application (Separate timeline per app) -->
-            <div class="timeline-app-filter-wrapper">
-              <span class="timeline-filter-label">Filtrar por App:</span>
-              <div class="timeline-app-chips" id="timelineAppFilterChips">
-                <button class="app-chip-pill active" data-package="all">Todas las Apps</button>
-                <!-- Dynamically populated chips for YouTube, TikTok, Roblox, etc. -->
+            <!-- Filter by Application (Agrupado y simplificado) -->
+            <div class="timeline-app-filter-wrapper" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; background: rgba(255,255,255,0.02); padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span class="timeline-filter-label" style="margin: 0; font-size: 0.8rem; color: #94a3b8; font-weight: 600;">📱 App:</span>
+                <div class="timeline-app-chips" id="timelineAppFilterChips" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0;">
+                  <button class="app-chip-pill active" data-package="ALL">🌐 Todas</button>
+                  <!-- Top 3 apps más frecuentes renderizadas dinámicamente -->
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <select id="selectTimelineAppDropdown" style="background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255,255,255,0.18); color: #cbd5e1; border-radius: 8px; padding: 5px 10px; font-size: 0.78rem; cursor: pointer; max-width: 200px;" title="Ver registros de otra aplicación específica">
+                  <option value="ALL">🔍 Más aplicaciones...</option>
+                </select>
               </div>
             </div>
 
@@ -832,45 +841,71 @@
             </div>
           </div>
 
-          <!-- Schedule & Daily Limit Settings (Moved to Column Right for 1:1 balance) -->
-          <div class="panel-card" id="sectionScheduleCard">
-            <div class="panel-header">
+          <!-- Live GPS Map Card (Reubicado en Columna Derecha para Balance Perfecto) -->
+          <div class="panel-card map-card" id="sectionGpsCard">
+            <div class="panel-header" style="flex-wrap: wrap; gap: 8px;">
               <div>
-                <h2 class="panel-title">Límites de Tiempo y Horarios</h2>
-                <p class="panel-subtitle">Define cuánto tiempo puede usar el dispositivo al día</p>
+                <h2 class="panel-title">📍 Geolocalización Satelital (GPS Activo)</h2>
+                <p class="panel-subtitle" id="locationSubtitle">Rastreo de ubicación satelital continua ininterrumpible</p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span class="badge badge-accent" id="locationAccuracyBadge">Esperando GPS</span>
+                <button id="btnRefreshLocation" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 6px;" title="Actualizar posición satelital">
+                  <span id="btnRefreshLocationIcon">🔄</span>
+                  <span id="btnRefreshLocationText">Actualizar</span>
+                </button>
+                <div style="display: inline-flex; align-items: center; gap: 4px;">
+                  <button id="btnToggleRouteHistory" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 6px;" title="Trazar ruta del día">
+                    <span id="btnRouteHistoryIcon">🗺️</span>
+                    <span id="btnRouteHistoryText">Trazar Ruta</span>
+                  </button>
+                  <select id="selectRouteHistoryDayHome" class="device-select-custom" style="font-size: 0.8rem; padding: 5px 8px;" title="Seleccionar día de la traza">
+                    <option value="today" selected>Hoy</option>
+                    <option value="yesterday">Ayer</option>
+                    <option value="custom">Fecha...</option>
+                  </select>
+                  <input type="date" id="inputRouteHistoryDateHome" style="display: none; background: #1e293b; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 3px 6px; font-size: 0.78rem;">
+                </div>
+                <button id="btnToggleGeofences" class="btn btn-secondary btn-sm" title="Zonas seguras (Colegio, Casa)">
+                  <span>🏫 Geocercas</span>
+                </button>
               </div>
             </div>
-
-            <div class="slider-control-group">
-              <div class="slider-header">
-                <span class="slider-label">Límite Diario Permitido:</span>
-                <span class="slider-val-badge" id="dailyLimitValText">2 horas 00 min</span>
-              </div>
-              <input type="range" id="dailyLimitRange" min="30" max="600" step="15" value="120" class="custom-range">
-              <div class="range-markers">
-                <span>30m</span>
-                <span>1h</span>
-                <span>2h</span>
-                <span>4h</span>
-                <span>6h</span>
-                <span>10h</span>
-              </div>
+            <div id="mapLeaflet" style="height: 280px; width: 100%; border-radius: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.08); background: #1e293b; z-index: 1;"></div>
+            <div class="location-footer-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 0.84rem;">
+              <span id="locationAddressText" style="color: var(--text-primary); font-weight: 500;">📍 Esperando primera coordenada GPS...</span>
+              <span id="locationLastUpdatedText" style="color: var(--text-muted);">Sin señal satelital aún</span>
             </div>
-
-            <div class="schedule-inputs-row">
-              <div class="time-input-group">
-                <label for="bedtimeStartInput">Inicio Modo Noche:</label>
-                <input type="time" id="bedtimeStartInput" value="21:30" class="time-input">
+            <!-- Route History Panel -->
+            <div class="route-history-panel" id="routeHistoryPanel" style="display: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-weight: 600; font-size: 0.78rem; color: #93c5fd;">
+                <span>📍 Puntos de la Ruta Trazada:</span>
+                <span id="routePointsCountBadge" class="badge badge-accent">0 posiciones</span>
               </div>
-              <div class="time-input-group">
-                <label for="bedtimeEndInput">Fin Modo Noche:</label>
-                <input type="time" id="bedtimeEndInput" value="07:00" class="time-input">
-              </div>
-              <button class="btn btn-primary" id="btnSaveSchedule">Guardar Horarios</button>
+              <div id="routeHistoryItemsList"></div>
             </div>
           </div>
 
-        </div><!-- /dashboard-grid -->
+          <!-- Tarjeta: Historial de Tiempo de Uso por Aplicación y Fecha -->
+          <div class="panel-card" style="margin-top: 18px;" id="panelAppUsageHistory">
+            <div class="panel-header" style="flex-wrap: wrap; gap: 10px;">
+              <div>
+                <h2 class="panel-title">⏱️ Tiempo de Uso por Aplicación</h2>
+                <p class="panel-subtitle">Audita cuántos minutos reales dedicó el menor a cada app según la fecha seleccionada</p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-xs date-filter-btn active" id="btnAppUsageToday" style="padding: 4px 9px; font-size: 0.78rem; border-radius: 6px;">Hoy</button>
+                <button type="button" class="btn btn-xs date-filter-btn" id="btnAppUsageYesterday" style="padding: 4px 9px; font-size: 0.78rem; border-radius: 6px;">Ayer</button>
+                <input type="date" id="inputAppUsageDate" style="background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 6px; padding: 2px 7px; font-size: 0.78rem; cursor: pointer;" title="Seleccionar fecha específica">
+              </div>
+            </div>
+            <div id="appUsageListContainer" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; max-height: 420px; overflow-y: auto;">
+              <!-- Renderizado dinámicamente por app.js -->
+            </div>
+          </div>
+
+        </section><!-- /column-sidebar -->
+      </div><!-- /dashboard-grid -->
       </div><!-- /live-supervision-section -->
       </div><!-- /tabViewOverview -->
 
@@ -897,9 +932,9 @@
 
           <div class="family-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 14px;">
             <div class="family-info-box" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 18px;">
-              <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">ID Familiar</div>
-              <div id="familyIdDisplay" style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-top: 4px; font-family: monospace;">FAM-DEFAULT-01</div>
-              <div style="font-size: 0.78rem; color: #94a3b8; margin-top: 6px;">Código único para vincular teléfonos familiares</div>
+              <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Hogar Familiar</div>
+              <div id="familyIdDisplay" style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-top: 4px;">Familia Protegida</div>
+              <div style="font-size: 0.78rem; color: #94a3b8; margin-top: 6px;">Grupo familiar activo y seguro</div>
             </div>
             <div class="family-info-box" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 18px;">
               <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Administrador / Propietario</div>
@@ -1146,11 +1181,22 @@
           </div>
 
           <!-- Filtros de multimedia -->
-          <div class="multimedia-filter-bar" style="display: flex; gap: 8px; margin-top: 14px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px; overflow-x: auto;">
-            <button class="filter-pill active" data-media="all" id="btnFilterMediaAll">📁 Todo el Historial</button>
-            <button class="filter-pill" data-media="image" id="btnFilterMediaPhotos">🖼️ Fotos / Capturas</button>
-            <button class="filter-pill" data-media="video" id="btnFilterMediaVideos">🎥 Videos (5s)</button>
-            <button class="filter-pill" data-media="audio" id="btnFilterMediaAudios">🎙️ Audio Ambiental</button>
+          <div class="multimedia-filter-bar" style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 14px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px; flex-wrap: wrap;">
+            <div style="display: flex; gap: 8px; overflow-x: auto; align-items: center; flex-wrap: wrap;">
+              <button class="filter-pill active" data-media="all" id="btnFilterMediaAll">📁 Todo</button>
+              <button class="filter-pill" data-media="image" id="btnFilterMediaPhotos">🖼️ Fotos</button>
+              <button class="filter-pill" data-media="video" id="btnFilterMediaVideos">🎥 Videos (5s)</button>
+              <button class="filter-pill" data-media="audio" id="btnFilterMediaAudios">🎙️ Audio</button>
+            </div>
+
+            <!-- Selector de Fecha Opción 1: Chips rápidos + Calendario nativo -->
+            <div class="date-filter-group" style="display: flex; gap: 6px; align-items: center; background: rgba(15, 23, 42, 0.6); padding: 4px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); flex-wrap: wrap;">
+              <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 500;">📅 Día:</span>
+              <button type="button" class="btn btn-xs date-filter-btn active" id="btnMediaDateToday" style="padding: 4px 9px; font-size: 0.78rem; border-radius: 6px;">Hoy</button>
+              <button type="button" class="btn btn-xs date-filter-btn" id="btnMediaDateYesterday" style="padding: 4px 9px; font-size: 0.78rem; border-radius: 6px;">Ayer</button>
+              <button type="button" class="btn btn-xs date-filter-btn" id="btnMediaDateAll" style="padding: 4px 9px; font-size: 0.78rem; border-radius: 6px;">Todos</button>
+              <input type="date" id="inputMediaDate" style="background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 6px; padding: 2px 7px; font-size: 0.78rem; cursor: pointer;" title="Seleccionar fecha específica">
+            </div>
           </div>
 
           <!-- Reproductor Activo / Preproducción de Video y Audio -->
@@ -1186,21 +1232,88 @@
             </div>
           </div>
 
-          <div class="panel-header" style="flex-wrap: wrap; gap: 8px;">
+          <div class="panel-header" style="flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center;">
             <div>
               <h2 class="panel-title">🕒 Historial Completo de Actividad</h2>
               <p class="panel-subtitle">Aperturas de aplicaciones, bloqueos, alertas y geocercas en tiempo real</p>
             </div>
-            <div class="filter-pills" id="historyTabFilterPills">
-              <button class="filter-pill active" data-type="all">Todos</button>
-              <button class="filter-pill" data-type="blocked">🛑 Bloqueos</button>
-              <button class="filter-pill" data-type="app_open">🚀 Aperturas</button>
-              <button class="filter-pill" data-type="alert">⚠️ Alertas</button>
-              <button class="filter-pill" data-type="gps">📍 GPS y Ubicación</button>
+            <!-- Selector de Fecha Opción 1: Chips rápidos + Calendario nativo -->
+            <div class="date-filter-group" style="display: flex; gap: 6px; align-items: center; background: rgba(15, 23, 42, 0.6); padding: 4px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); flex-wrap: wrap;">
+              <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 500;">📅 Día:</span>
+              <button type="button" class="btn btn-xs date-filter-btn active" id="btnHistoryDateToday" style="padding: 4px 9px; font-size: 0.78rem; border-radius: 6px;">Hoy</button>
+              <button type="button" class="btn btn-xs date-filter-btn" id="btnHistoryDateYesterday" style="padding: 4px 9px; font-size: 0.78rem; border-radius: 6px;">Ayer</button>
+              <button type="button" class="btn btn-xs date-filter-btn" id="btnHistoryDateAll" style="padding: 4px 9px; font-size: 0.78rem; border-radius: 6px;">Todos</button>
+              <input type="date" id="inputHistoryDate" style="background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 6px; padding: 2px 7px; font-size: 0.78rem; cursor: pointer;" title="Seleccionar fecha específica">
             </div>
           </div>
-          <div class="activity-feed" id="historyTabActivityFeed" style="margin-top: 14px; max-height: 600px; overflow-y: auto;">
+          <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;" class="filter-pills" id="historyTabFilterPills">
+            <button class="filter-pill active" data-type="all">Todos</button>
+            <button class="filter-pill" data-type="blocked">🛑 Bloqueos</button>
+            <button class="filter-pill" data-type="app_open">🚀 Aperturas</button>
+            <button class="filter-pill" data-type="alert">⚠️ Alertas</button>
+            <button class="filter-pill" data-type="gps">📍 GPS y Ubicación</button>
+          </div>
+          <div class="activity-feed" id="historyTabActivityFeed" style="margin-top: 14px; max-height: 480px; overflow-y: auto;">
             <!-- Poblado dinámicamente por app.js -->
+          </div>
+
+          <!-- Tarjeta Integrada: Tiempo de Uso por Aplicación en Historial -->
+          <div class="panel-card" style="margin-top: 18px; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02);" id="historyAppUsagePanel">
+            <div class="panel-header" style="flex-wrap: wrap; gap: 10px;">
+              <div>
+                <h3 class="panel-title" style="font-size: 1.05rem;">⏱️ Tiempo de Uso por Aplicación (Día Seleccionado)</h3>
+                <p class="panel-subtitle">Auditoría detallada de aplicaciones abiertas y minutos consumidos</p>
+              </div>
+            </div>
+            <div id="historyAppUsageListContainer" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; max-height: 380px; overflow-y: auto;">
+              <!-- Renderizado dinámicamente por app.js -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- PESTAÑA: REGISTRO DE TECLADO Y BÚSQUEDAS (PROTECCIÓN)    -->
+      <!-- ========================================================= -->
+      <div class="monitoring-tab-view hidden" id="tabViewKeystrokes">
+        <div class="panel-card">
+          <div class="panel-header" style="flex-wrap: wrap; gap: 12px;">
+            <div>
+              <h2 class="panel-title">⌨️ Registro de Teclado, Búsquedas y Mensajes</h2>
+              <p class="panel-subtitle">Supervisa los textos redactados por el menor en redes sociales, mensajería y navegador. Las contraseñas se omiten automáticamente por seguridad.</p>
+            </div>
+            <!-- Filtros de fecha rápidos, selector nativo y botón de borrado -->
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <button type="button" class="btn btn-xs date-filter-btn active" id="btnKeyDateToday" style="padding: 4px 9px; font-size: 0.78rem; border-radius: 6px;">Hoy</button>
+              <button type="button" class="btn btn-xs date-filter-btn" id="btnKeyDateYesterday" style="padding: 4px 9px; font-size: 0.78rem; border-radius: 6px;">Ayer</button>
+              <button type="button" class="btn btn-xs date-filter-btn" id="btnKeyDateAll" style="padding: 4px 9px; font-size: 0.78rem; border-radius: 6px;">Todos</button>
+              <input type="date" id="inputKeyDate" style="background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 6px; padding: 2px 7px; font-size: 0.78rem; cursor: pointer;" title="Seleccionar fecha específica">
+              <button type="button" class="btn btn-xs btn-outline" id="btnKeyClearAll" style="padding: 4px 9px; font-size: 0.78rem; border-radius: 6px; color: #f87171; border-color: rgba(239, 68, 68, 0.35); margin-left: 4px;" title="Limpiar todo el historial de texto de este dispositivo">🗑️ Limpiar Todo</button>
+            </div>
+          </div>
+
+          <!-- Barra de búsqueda y filtro de app -->
+          <div style="display: flex; gap: 10px; margin: 12px 0 16px 0; flex-wrap: wrap;">
+            <div class="app-search-box" style="flex: 1; min-width: 220px; margin: 0;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="inputKeySearch" placeholder="Buscar palabras clave en lo escrito (ej: ayuda, secreto)...">
+            </div>
+            <select id="selectKeyAppFilter" style="background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 8px; padding: 8px 12px; font-size: 0.85rem; cursor: pointer;">
+              <option value="all">📱 Todas las aplicaciones</option>
+              <option value="whatsapp">💬 WhatsApp</option>
+              <option value="instagram">📸 Instagram</option>
+              <option value="chrome">🌐 Google Chrome / Web</option>
+              <option value="tiktok">🎵 TikTok</option>
+              <option value="youtube">🎬 YouTube</option>
+            </select>
+          </div>
+
+          <!-- Contenedor de Registros de Texto -->
+          <div id="keystrokesListContainer" style="display: flex; flex-direction: column; gap: 10px; max-height: 650px; overflow-y: auto; padding-right: 4px;">
+            <!-- Renderizado dinámicamente por app.js -->
           </div>
         </div>
       </div>
@@ -1371,6 +1484,25 @@
                 <button class="btn btn-secondary btn-sm" id="btnSaveMediaDurationSettings" style="width: 100%;">Guardar Duración Multimedia</button>
               </div>
 
+              <!-- 6. Preferencias de Alertas Sonoras y Notificaciones -->
+              <div class="settings-card-box" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 18px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                  <span style="font-size: 1.3rem;">🔔</span>
+                  <h3 style="color: #fff; font-size: 1.05rem; margin: 0;">Sonido de Alertas y Notificaciones</h3>
+                </div>
+                <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 14px;">
+                  Configura si el panel debe emitir sonidos de alerta audibles ante eventos de seguridad, bloqueos o desconexiones.
+                </p>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; background: rgba(15,23,42,0.6); padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                  <span style="font-size: 0.88rem; color: #fff; font-weight: 500;">Sonido de Alertas:</span>
+                  <label style="display: inline-flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="settingsToggleSoundNotifications" checked style="accent-color: #6366f1; width: 18px; height: 18px; cursor: pointer;">
+                    <span id="settingsToggleSoundText" style="font-size: 0.84rem; color: #818cf8; margin-left: 8px; font-weight: 600;">Activado</span>
+                  </label>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnTestNotificationSound" style="width: 100%;">🔊 Probar Sonido de Alerta</button>
+              </div>
+
             </div>
           </div>
 
@@ -1484,6 +1616,156 @@
                 </div>
               </div>
             </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- PESTAÑA 9: INFORMES MENSUALES                           -->
+      <!-- ========================================================= -->
+      <div class="monitoring-tab-view hidden" id="tabViewReports">
+        <div class="panel-card">
+
+          <div class="panel-header" style="flex-wrap: wrap; gap: 14px; margin-bottom: 20px;">
+            <div>
+              <h2 class="panel-title">📑 Informes Mensuales de Uso y Bienestar Digital</h2>
+              <p class="panel-subtitle">Genera resúmenes ejecutivos mensuales de tiempo de pantalla, distribución por categorías, aplicaciones más utilizadas y eventos de seguridad por hijo.</p>
+            </div>
+            <!-- Acciones rápidas -->
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <button type="button" class="btn btn-outline btn-sm" id="btnPrintMonthlyReport" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600;">
+                <span>🖨️</span> Descargar / Imprimir (PDF)
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" id="btnSendMonthlyReportEmail" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700;">
+                <span>✉️</span> Enviar por Correo
+              </button>
+            </div>
+          </div>
+
+          <!-- Selector Contextual: Hijo y Mes a consultar -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; flex-wrap: wrap; gap: 14px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 14px 18px;">
+            <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+              <div class="child-context-select-wrapper" style="margin: 0;">
+                <label for="reportsDeviceSelect" style="font-size: 0.82rem; color: #94a3b8;">🧒 Hijo supervisado:</label>
+                <select id="reportsDeviceSelect" class="child-context-select" title="Selecciona el hijo para el informe"></select>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label for="reportsMonthSelect" style="font-size: 0.82rem; color: #94a3b8; font-weight: 600;">📅 Mes del informe:</label>
+                <select id="reportsMonthSelect" style="background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 8px; padding: 7px 12px; font-size: 0.85rem; cursor: pointer;">
+                  <!-- Poblado dinámicamente con los meses -->
+                </select>
+              </div>
+            </div>
+            <div>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshMonthlyReport" style="font-size: 0.82rem; padding: 7px 14px;">
+                🔄 Actualizar Métricas
+              </button>
+            </div>
+          </div>
+
+          <!-- Contenedor del Informe Mensual (Imprimible y Descargable) -->
+          <div id="monthlyReportContentArea" class="printable-report-card" style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; position: relative; overflow: hidden;">
+            
+            <!-- Encabezado del Documento de Reporte -->
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 18px; margin-bottom: 22px; flex-wrap: wrap; gap: 14px;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div id="reportChildAvatar" style="width: 52px; height: 52px; border-radius: 50%; background: linear-gradient(135deg, #4f46e5, #7c3aed); display: flex; align-items: center; justify-content: center; font-size: 1.8rem; box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4);">
+                  👦
+                </div>
+                <div>
+                  <h3 id="reportChildTitle" style="color: #fff; font-size: 1.3rem; font-weight: 800; margin: 0;">
+                    Informe de Actividad Digital: Seba
+                  </h3>
+                  <p id="reportPeriodSubtitle" style="color: #94a3b8; font-size: 0.86rem; margin: 4px 0 0 0;">
+                    Período: Septiembre 2026 • Dispositivo: S/N: KS-PROTECTED
+                  </p>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); padding: 6px 12px; font-size: 0.8rem; font-weight: 700;">
+                  🛡️ KidsShield Certificado
+                </span>
+              </div>
+            </div>
+
+            <!-- 4 Tarjetas de Métricas Clave (KPIs) -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 26px;">
+              <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 16px; text-align: center;">
+                <div style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 6px;">⏱️ Tiempo Total Mensual</div>
+                <div id="reportKpiTotalTime" style="font-size: 1.7rem; font-weight: 800; color: #ffffff;">0h 00m</div>
+                <div style="font-size: 0.72rem; color: #64748b; margin-top: 4px;">Pantalla activa acumulada</div>
+              </div>
+
+              <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 16px; text-align: center;">
+                <div style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 6px;">📊 Promedio Diario</div>
+                <div id="reportKpiDailyAvg" style="font-size: 1.7rem; font-weight: 800; color: #38bdf8;">0h 00m</div>
+                <div style="font-size: 0.72rem; color: #64748b; margin-top: 4px;">Uso diario estimado</div>
+              </div>
+
+              <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 16px; text-align: center;">
+                <div style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 6px;">📅 Días con Actividad</div>
+                <div id="reportKpiActiveDays" style="font-size: 1.7rem; font-weight: 800; color: #34d399;">0 días</div>
+                <div style="font-size: 0.72rem; color: #64748b; margin-top: 4px;">Días supervisados en el mes</div>
+              </div>
+
+              <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 16px; text-align: center;">
+                <div style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 6px;">🚨 Alertas de Seguridad</div>
+                <div id="reportKpiAlerts" style="font-size: 1.7rem; font-weight: 800; color: #10b981;">0</div>
+                <div style="font-size: 0.72rem; color: #64748b; margin-top: 4px;">Incidentes y bloqueos</div>
+              </div>
+            </div>
+
+            <!-- Grilla Principal: Categorías y Top Apps -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; margin-bottom: 26px;">
+              
+              <!-- Columna 1: Distribución por Categorías -->
+              <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 18px;">
+                <h4 style="color: #fff; font-size: 1.05rem; font-weight: 700; margin: 0 0 14px 0; display: flex; align-items: center; gap: 8px;">
+                  <span>📂</span> Distribución por Categoría
+                </h4>
+                <div id="reportCategoryBreakdownList" style="display: flex; flex-direction: column; gap: 12px;">
+                  <!-- Poblado dinámicamente -->
+                </div>
+              </div>
+
+              <!-- Columna 2: Top Aplicaciones Más Utilizadas -->
+              <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 18px;">
+                <h4 style="color: #fff; font-size: 1.05rem; font-weight: 700; margin: 0 0 14px 0; display: flex; align-items: center; gap: 8px;">
+                  <span>🏆</span> Top Aplicaciones Más Utilizadas
+                </h4>
+                <div id="reportTopAppsList" style="display: flex; flex-direction: column; gap: 10px;">
+                  <!-- Poblado dinámicamente -->
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Observaciones Pedagógicas y Recomendaciones -->
+            <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 14px; padding: 18px; margin-bottom: 24px;">
+              <h4 style="color: #a5b4fc; font-size: 1.02rem; font-weight: 700; margin: 0 0 10px 0; display: flex; align-items: center; gap: 8px;">
+                <span>💡</span> Diagnóstico Pedagógico y Sugerencias de Protección
+              </h4>
+              <ul id="reportInsightsList" style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px;">
+                <!-- Poblado dinámicamente -->
+              </ul>
+            </div>
+
+            <!-- Registro de Eventos de Seguridad del Mes -->
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 18px;">
+              <h4 style="color: #fff; font-size: 1.02rem; font-weight: 700; margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px;">
+                <span>🚨</span> Registro de Seguridad y Alertas Registradas en el Mes
+              </h4>
+              <div id="reportSecurityEventsList" style="display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto;">
+                <!-- Poblado dinámicamente -->
+              </div>
+            </div>
+
+            <!-- Pie del Informe -->
+            <div style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 0.78rem; color: #64748b;">
+              Documento confidencial emitido por KidsShield Parental Control para uso exclusivo de los tutores legales.
+            </div>
+
           </div>
 
         </div>
@@ -1906,7 +2188,7 @@
               <p id="adminProfileEmail" style="margin: 2px 0 0 0; color: #a5b4fc; font-size: 0.82rem;">correo@gmail.com</p>
               <div style="margin-top: 4px; display: flex; gap: 6px; align-items: center;">
                 <span id="adminProfileRoleBadge" class="badge badge-accent" style="font-size: 0.7rem;">Titular de Familia</span>
-                <span id="adminFamilyIdBadge" style="font-size: 0.7rem; color: var(--text-muted); background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">FAM-DEFAULT</span>
+                <span id="adminFamilyIdBadge" style="font-size: 0.7rem; color: #a5b4fc; background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.3); padding: 2px 8px; border-radius: 4px;">🛡️ Familia Protegida</span>
               </div>
             </div>
           </div>
