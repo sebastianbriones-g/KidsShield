@@ -96,6 +96,40 @@ public class UsageMonitorService extends Service {
         filter.addAction(Intent.ACTION_SCREEN_OFF);
         filter.addAction(Intent.ACTION_SCREEN_ON);
         registerReceiver(screenReceiver, filter);
+
+        registerNetworkMonitor();
+    }
+
+    private android.net.ConnectivityManager.NetworkCallback networkCallback;
+
+    private void registerNetworkMonitor() {
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                networkCallback = new android.net.ConnectivityManager.NetworkCallback() {
+                    @Override
+                    public void onAvailable(android.net.Network network) {
+                        Log.i(TAG, "🌐 [ONLINE] Conexión a Internet restablecida (NetworkCallback)");
+                        com.kidsguard.parentalcontrol.database.OfflineQueueManager.flushQueue(UsageMonitorService.this);
+                    }
+                };
+                cm.registerDefaultNetworkCallback(networkCallback);
+            } else if (cm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                android.net.NetworkRequest request = new android.net.NetworkRequest.Builder()
+                        .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        .build();
+                networkCallback = new android.net.ConnectivityManager.NetworkCallback() {
+                    @Override
+                    public void onAvailable(android.net.Network network) {
+                        Log.i(TAG, "🌐 [ONLINE] Conexión a Internet restablecida (NetworkCallback)");
+                        com.kidsguard.parentalcontrol.database.OfflineQueueManager.flushQueue(UsageMonitorService.this);
+                    }
+                };
+                cm.registerNetworkCallback(request, networkCallback);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "No se pudo registrar NetworkCallback: " + e.getMessage());
+        }
     }
 
     private void createNotificationChannel() {
@@ -315,6 +349,11 @@ public class UsageMonitorService extends Service {
         // Sync with parent server
         SyncClient.sendReport(this, battery, totalScreenTimeMinutes, activePkg, appCatalog, locationObj, null);
 
+        // Vaciado diferido de cola offline cada pocos ciclos si hay conectividad
+        if (syncCycleCount % 4 == 0) {
+            com.kidsguard.parentalcontrol.database.OfflineQueueManager.flushQueue(this);
+        }
+
         // Captura de pantalla: SOLO si el padre lo tiene configurado expresamente y no está pausado
         if (config.isAutoScreenshotEnabled() && !config.isLivePaused()) {
             if (a11y != null) {
@@ -442,6 +481,14 @@ public class UsageMonitorService extends Service {
         if (screenReceiver != null) {
             try {
                 unregisterReceiver(screenReceiver);
+            } catch (Exception ignored) {}
+        }
+        if (networkCallback != null) {
+            try {
+                android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                if (cm != null) {
+                    cm.unregisterNetworkCallback(networkCallback);
+                }
             } catch (Exception ignored) {}
         }
         super.onDestroy();

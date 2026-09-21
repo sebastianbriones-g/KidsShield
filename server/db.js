@@ -120,12 +120,16 @@ async function initDb() {
       );
     `);
 
-    // Migraciones para soporte de tipo de dispositivo y modelo detectado
+    // Migraciones para soporte de tipo de dispositivo, modelo y módulos de detección
     const devCols = [
       "ALTER TABLE devices ADD COLUMN device_type TEXT DEFAULT 'celular'",
       "ALTER TABLE devices ADD COLUMN has_connected INTEGER DEFAULT 0",
       "ALTER TABLE devices ADD COLUMN model TEXT DEFAULT ''",
-      "ALTER TABLE devices ADD COLUMN manufacturer TEXT DEFAULT ''"
+      "ALTER TABLE devices ADD COLUMN manufacturer TEXT DEFAULT ''",
+      "ALTER TABLE devices ADD COLUMN text_monitoring_enabled INTEGER DEFAULT 1",
+      "ALTER TABLE devices ADD COLUMN screenshot_monitoring_enabled INTEGER DEFAULT 1",
+      "ALTER TABLE devices ADD COLUMN video_monitoring_enabled INTEGER DEFAULT 1",
+      "ALTER TABLE devices ADD COLUMN audio_monitoring_enabled INTEGER DEFAULT 1"
     ];
     for (const sql of devCols) {
       try { await client.execute(sql); } catch (_) {}
@@ -464,7 +468,11 @@ async function getAllDevices(familyId = null) {
       deviceType: row.device_type || 'celular',
       hasConnected: Boolean(row.has_connected),
       model: row.model || '',
-      manufacturer: row.manufacturer || ''
+      manufacturer: row.manufacturer || '',
+      textMonitoringEnabled: row.text_monitoring_enabled !== undefined && row.text_monitoring_enabled !== null ? Boolean(row.text_monitoring_enabled) : true,
+      screenshotMonitoringEnabled: row.screenshot_monitoring_enabled !== undefined && row.screenshot_monitoring_enabled !== null ? Boolean(row.screenshot_monitoring_enabled) : true,
+      videoMonitoringEnabled: row.video_monitoring_enabled !== undefined && row.video_monitoring_enabled !== null ? Boolean(row.video_monitoring_enabled) : true,
+      audioMonitoringEnabled: row.audio_monitoring_enabled !== undefined && row.audio_monitoring_enabled !== null ? Boolean(row.audio_monitoring_enabled) : true
     }));
   } catch (e) {
     console.error('[Database] Error leyendo dispositivos:', e);
@@ -508,7 +516,11 @@ async function getDeviceById(id) {
       deviceType: row.device_type || 'celular',
       hasConnected: Boolean(row.has_connected),
       model: row.model || '',
-      manufacturer: row.manufacturer || ''
+      manufacturer: row.manufacturer || '',
+      textMonitoringEnabled: row.text_monitoring_enabled !== undefined && row.text_monitoring_enabled !== null ? Boolean(row.text_monitoring_enabled) : true,
+      screenshotMonitoringEnabled: row.screenshot_monitoring_enabled !== undefined && row.screenshot_monitoring_enabled !== null ? Boolean(row.screenshot_monitoring_enabled) : true,
+      videoMonitoringEnabled: row.video_monitoring_enabled !== undefined && row.video_monitoring_enabled !== null ? Boolean(row.video_monitoring_enabled) : true,
+      audioMonitoringEnabled: row.audio_monitoring_enabled !== undefined && row.audio_monitoring_enabled !== null ? Boolean(row.audio_monitoring_enabled) : true
     };
   } catch (e) {
     console.error(`[Database] Error leyendo dispositivo ${id}:`, e);
@@ -529,12 +541,14 @@ async function saveDevice(device) {
           bedtime_enabled, bedtime_start, bedtime_end, current_active_app, current_active_app_name,
           app_limits_json, blocked_apps_json, app_catalog_json, last_screenshot, last_screenshot_time,
           device_type, has_connected, model, manufacturer,
+          text_monitoring_enabled, screenshot_monitoring_enabled, video_monitoring_enabled, audio_monitoring_enabled,
           created_at, updated_at
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
           ?, ?, ?, ?,
           ?, ?
         )
@@ -566,6 +580,10 @@ async function saveDevice(device) {
           has_connected = COALESCE(excluded.has_connected, devices.has_connected),
           model = COALESCE(excluded.model, devices.model),
           manufacturer = COALESCE(excluded.manufacturer, devices.manufacturer),
+          text_monitoring_enabled = COALESCE(excluded.text_monitoring_enabled, devices.text_monitoring_enabled),
+          screenshot_monitoring_enabled = COALESCE(excluded.screenshot_monitoring_enabled, devices.screenshot_monitoring_enabled),
+          video_monitoring_enabled = COALESCE(excluded.video_monitoring_enabled, devices.video_monitoring_enabled),
+          audio_monitoring_enabled = COALESCE(excluded.audio_monitoring_enabled, devices.audio_monitoring_enabled),
           updated_at = excluded.updated_at;
       `,
       args: [
@@ -597,6 +615,10 @@ async function saveDevice(device) {
         device.hasConnected ? 1 : 0,
         device.model || '',
         device.manufacturer || '',
+        device.textMonitoringEnabled !== false ? 1 : 0,
+        device.screenshotMonitoringEnabled !== false ? 1 : 0,
+        device.videoMonitoringEnabled !== false ? 1 : 0,
+        device.audioMonitoringEnabled !== false ? 1 : 0,
         now,
         now
       ]
@@ -732,11 +754,11 @@ async function getVideoClips(deviceId, limit = 20) {
   }
 }
 
-async function logActivity(deviceId, time, type, message, familyId = 'FAM-DEFAULT-01') {
+async function logActivity(deviceId, time, type, message, familyId = 'FAM-DEFAULT-01', createdAt = null) {
   try {
     await client.execute({
       sql: `INSERT INTO activity_logs (device_id, family_id, time, type, message, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-      args: [deviceId, familyId, time, type, message, new Date().toISOString()]
+      args: [deviceId, familyId, time, type, message, createdAt || new Date().toISOString()]
     });
   } catch (e) {
     console.error('[Database] Error guardando registro de actividad:', e);

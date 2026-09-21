@@ -8,7 +8,7 @@
 [![Reports](https://img.shields.io/badge/Reports-Informes%20Mensuales%20Automáticos-blueviolet.svg)](#-informes-mensuales-de-uso-y-bienestar-digital)
 [![License](https://img.shields.io/badge/License-Proprietary-red.svg)](#)
 
-**KidsShield** es una solución tecnológica avanzada y lista para producción diseñada para proteger a niños, niñas y adolescentes en el entorno digital. Combina una aplicación nativa para Android con servicios en segundo plano de alta resiliencia y un panel de control para padres con diseño de vanguardia, sincronización en tiempo real mediante WebSockets, generación automática de informes mensuales con despacho por correo electrónico y descarga PDF, recuperación de contraseña, compatibilidad con redes Tailscale / LAN y base de datos distribuida en la nube con **Turso (LibSQL)**.
+**KidsShield** es una solución tecnológica integral y de nivel de producción diseñada para el acompañamiento, seguridad y bienestar digital de niños, niñas y adolescentes. Combina una aplicación móvil nativa para Android con arquitectura dual (Asistente de Vinculación QR y Dashboard amigable para el menor), servicios en segundo plano con persistencia y cola offline (SQLite local), un panel de control web con diseño *Glassmorphism* de última generación, sincronización bidireccional por WebSockets con aislamiento multi-inquilino, watchdog inteligente anti-falsas alarmas, generación automática de informes mensuales con despacho por correo y descarga en PDF, y compatibilidad con redes Tailscale / LAN sobre una base de datos distribuida en la nube con **Turso (LibSQL)**.
 
 ---
 
@@ -16,38 +16,36 @@
 
 - [Características Principales](#-características-principales)
 - [Arquitectura del Sistema](#-arquitectura-del-sistema)
-- [Seguridad y Autenticación](#-seguridad-y-autenticación)
+- [Nueva Experiencia Dual en la APK Android](#-nueva-experiencia-dual-en-la-apk-android)
+  - [1. Modo Asistente de Vinculación (Setup Wizard)](#1-modo-asistente-de-vinculación-setup-wizard)
+  - [2. Modo Menor Protegido (Kid Dashboard)](#2-modo-menor-protegido-kid-dashboard)
+  - [3. Panel de Administración Parental Protegido con PIN](#3-panel-de-administración-parental-protegido-con-pin)
+- [Cola Offline y Persistencia Local (SQLite Android)](#-cola-offline-y-persistencia-local-sqlite-android)
+- [Watchdog Inteligente y Tolerancia en Reposo](#-watchdog-inteligente-y-tolerancia-en-reposo)
+- [Guía de Configuración para Dispositivos Xiaomi (MIUI / HyperOS)](#-guía-de-configuración-para-dispositivos-xiaomi-miui--hyperos)
 - [Informes Mensuales de Uso y Bienestar Digital](#-informes-mensuales-de-uso-y-bienestar-digital)
-- [Navegación Unificada y Vinculación QR](#-navegación-unificada-y-vinculación-qr)
-- [Centro de Configuración y Facturación](#-centro-de-configuración-y-facturación)
-- [Recuperación de Contraseña y Correos](#-recuperación-de-contraseña-y-correos)
-- [Gestión de Aplicaciones Instaladas y Catálogo Canónico](#-gestión-de-aplicaciones-instaladas-y-catálogo-canónico)
+- [Gestión de Aplicaciones y Catálogo Canónico](#-gestión-de-aplicaciones-y-catálogo-canónico)
 - [Línea de Tiempo y Filtros por Aplicación](#-línea-de-tiempo-y-filtros-por-aplicación)
-- [Modelo de Monetización y Planes](#-modelo-de-monetización-y-planes)
-- [Lugares y Geocercas Seguras con Selección en Mapa](#-lugares-y-geocercas-seguras-con-selección-en-mapa)
-- [Captura Automática y Multimedia en Tiempo Real](#-captura-automática-y-multimedia-en-tiempo-real)
-- [Bloqueo Infranqueable en la App Android](#-bloqueo-infranqueable-en-la-app-android)
+- [Bloqueo Inteligente de Aplicaciones y Dispositivo Unificado](#-bloqueo-inteligente-de-aplicaciones-y-dispositivo-unificado)
 - [Requisitos del Sistema](#-requisitos-del-sistema)
-- [Monitoreo en Tiempo Real de Aplicaciones Activas](#-monitoreo-en-tiempo-real-de-aplicaciones-activas)
-- [Traza GPS Diaria, Control de Frecuencia Satelital y Alertas](#-traza-gps-diaria-control-de-frecuencia-satelital-y-alertas)
-- [Duración Dinámica de Audio y Video (5s, 7s, 10s)](#-duración-dinámica-de-audio-y-video-5s-7s-10s)
-- [Sincronización de Bloqueo, Tiempo de Pantalla e Historial](#-sincronización-de-bloqueo-tiempo-de-pantalla-e-historial)
 - [Guía de Instalación y Despliegue](#-guía-de-instalación-y-despliegue)
   - [1. Configuración del Servidor y Base de Datos](#1-configuración-del-servidor-y-base-de-datos)
-  - [2. Configuración de Google OAuth 2.0](#2-configuración-de-google-oauth-20)
-  - [3. Instalación de la App Android en el Teléfono del Menor (Asistente de 6 Pasos)](#3-instalación-de-la-app-android-en-el-teléfono-del-menor-asistente-de-6-pasos)
-  - [4. Conectividad Remota con Tailscale o Red Local](#4-conectividad-remota-con-tailscale-o-red-local)
-- [Desvinculación y Liberación Remota](#-desvinculación-y-liberación-remota)
-- [Modo Micrófono y Monitoreo en Vivo](#-modo-micrófono-y-monitoreo-en-vivo)
+  - [2. Instalación y Vinculación de la APK en el Móvil](#2-instalación-y-vinculación-de-la-apk-en-el-móvil)
+  - [3. Conectividad Remota con Tailscale o Red Local](#3-conectividad-remota-con-tailscale-o-red-local)
 - [Estructura del Repositorio](#-estructura-del-repositorio)
 - [Recompilación de la App Android](#-recompilación-de-la-app-android)
+- [Aviso Legal](#-aviso-legal)
 
 ---
 
 ## ✨ Características Principales
 
-- 📑 **Informes Mensuales de Uso y Seguridad Digital Automáticos**: Pestaña dedicada para emitir balances ejecutivos mensuales por hijo, con métricas agregadas (tiempo total, promedio diario, días supervisados, alertas de seguridad), barras de progreso por categoría, top de aplicaciones y conclusiones pedagógicas automatizadas. Incluye descarga/impresión A4 (`@media print`) y envío directo por correo electrónico con plantilla HTML profesional vía Nodemailer.
-- ⏱️ **Tiempo de Pantalla Real e Independiente por Hijo**: Medición fidedigna y aislada del tiempo de uso en primer plano para cada menor, sin mezclas de datos ni arrastres al cambiar de dispositivo en el panel.
+- 📱 **Arquitectura Dual en la APK Android**:
+  - **Asistente de Vinculación Zero-Friction**: Vinculación instantánea en 1 segundo escaneando el código QR generado por el panel web con la cámara del menor (`btnScanQrPairing`). Sin IDs residuales ni configuraciones manuales complejas.
+  - **Dashboard Amigable para el Menor**: Interfaz limpia con escudo protector `🛡️ Tu teléfono está protegido`, saludo personalizado (`👋 ¡Hola Seba!`), métricas del tiempo restante de pantalla de hoy y horario de descanso nocturno.
+- 💾 **Resiliencia Offline con Base de Datos Local**: Motor `OfflineQueueManager` con base de datos SQLite embebida (`OfflineDbHelper`) en Android. Si el móvil pierde la conexión (modo avión, túneles, falta de cobertura), los reportes de uso y eventos de seguridad se encolan localmente y se vacían de forma transparente al recuperar la red vía `NetworkChangeReceiver`.
+- ⏱️ **Watchdog Inteligente y Tolerancia en Reposo**: Algoritmo de monitoreo adaptativo en el servidor (3 min en uso activo, 10 min en pantalla apagada) que previene alertas falsas continuas cuando el teléfono entra en suspensión normal (*Doze mode*).
+- 📑 **Informes Mensuales de Uso y Bienestar Digital**: Pestaña dedicada para balances ejecutivos mensuales por hijo con tiempo acumulado, promedio diario, días supervisados, alertas de seguridad, barras de progreso por categoría y conclusiones pedagógicas automatizadas. Incluye descarga/impresión A4 (`@media print`) y despacho por correo HTML vía Nodemailer.
 - 🧒 **Selección Interactiva de Hijos en el Resumen**: Tarjetas de menores interactivas con un solo clic, resaltadas con contorno iluminado y la insignia destacada **`👁️ Supervisando ahora`**.
 - ⏱️ **Límites de Pantalla Diario Simplificado**: Sección focalizada exclusivamente en el límite diario total de pantalla, manteniendo el horario nocturno (Modo Descanso) de forma ordenada en la pestaña de Configuración.
 - 📱 **Catálogo Canónico de 8 Categorías de Aplicaciones**: Sincronización exacta entre las píldoras de filtro (`#categoryFilter`) y los selectores desplegables individuales de cada app (`.app-category-select`):
@@ -58,15 +56,10 @@
 - ⚙️ **Centro de Configuración en 2 Apartados**:
   - **1. Configuración de Dispositivos**: Selector contextual de menor con parámetros de GPS, límite diario de pantalla, modo descanso (Bedtime) y PIN parental.
   - **2. Configuración de Pago y Plan**: Tarjeta bancaria virtual interactiva, modal de actualización, conmutador de **Renovación Automática (Auto-Renew)**, cuota de dispositivos e historial de recibos con descarga PDF.
-- 📱 **Vinculación Rápida con Código QR Dinámico**: Generador de QR interactivo en modal emergente que despliega el código de emparejamiento familiar y dirección IP del servidor para sincronización instantánea con la cámara del menor.
-- 💎 **Gestión de Membresías y Estado Familiar**: Tarjeta lateral con visualización de nivel de suscripción (*Familia Total VIP 💎* / *Familiar Pro ⚡*) y ajuste reactivo del cupo de dispositivos permitidos.
 - 🔒 **Bloqueo Inteligente de Aplicaciones y Dispositivo Unificado**: Control remoto inmediato de aplicaciones individuales o bloqueo total del dispositivo con expulsión instantánea al launcher y pantalla contextual con PIN de rescate.
 - 📍 **Geocercas Seguras con Selección en Mapa**: Marcación con un clic en el mapa satelital para capturar coordenadas al vuelo, validación con feedback visual, guardado y eliminación persistente.
 - 📸 **Captura Automática Periódica en Multimedia**: Supervisión programada (fotos, clips de vídeo de 5s, grabaciones de audio de 5s o secuencia mixta) con intervalos de 30s a 5min y temporizador en vivo.
 - 🔄 **Galería Multimedia en Tiempo Real**: Recepción instantánea de fotos y clips mediante eventos WebSocket dedicados (`MULTIMEDIA_UPDATED`) y peticiones en cascada.
-- 👨‍👩‍👧‍👦 **Administración de Perfiles en "Mi Familia"**: Modificación dinámica de nombre del hijo/a, modelo de terminal, tipo (📱 Celular o 📟 Tablet) y avatar interactivo, sincronizado con base de datos en tiempo real.
-- 🚀 **Asistente Inteligente de Permisos Android (6 Pasos)**: Guía paso a paso al tutor para conceder los permisos del sistema con un solo botón inteligente (*"Otorgar Siguiente Permiso Faltante"*).
-- 📧 **Recuperación Segura de Contraseña por Correo**: Sistema con tokens criptográficos de 60 minutos de vigencia y plantillas de correo HTML responsivas profesionales vía Nodemailer.
 - 🗺️ **Traza GPS Diaria con Selector de Fecha**: Historial satelital continuo (Hoy, Ayer o fecha personalizada), trazando la ruta entera en el mapa Leaflet con marcadores de inicio 🏁, última posición 📍 y cálculo de distancia acumulada.
 - 🎙️🎬 **Duración Configurable de Audio y Video (5s, 7s, 10s)**: Ajuste dedicado para la escucha ambiental y videos en vivo con reflejo reactivo en los botones de acción.
 - 🌐 **Soporte Tailscale / Red Local**: Detección automática de IPs para control tanto dentro como fuera de casa sin abrir puertos inseguros.
@@ -79,6 +72,7 @@
 ```mermaid
 graph TD
     A[Móvil Hijo: KidsShield APK] -->|WebSockets / REST API| B(Servidor KidsShield: Node.js Express)
+    A -->|Persistencia Local| AO[(SQLite Embebido: OfflineDb)]
     C[Panel de Padres: Web App] -->|WebSockets / REST + JWT| B
     B -->|LibSQL Protocol| D[(Turso Cloud Database)]
     B -->|Fallback| E[(SQLite Local: kidsshield.db)]
@@ -88,100 +82,112 @@ graph TD
     B -->|Informes Mensuales| H[Router de Reportes: reportRoutes.js]
 ```
 
-1. **`child-android-app/`**: Aplicación nativa Android (Java 17, SDK 34) implementando:
-   - `AccessibilityService`: Monitoreo de ventanas en primer plano, bloqueo de apps restringidas y prevención de apagado de GPS.
-   - `UsageStatsManager`: Conteo preciso de minutos de pantalla por paquete.
-   - `DeviceAdminReceiver`: Protección contra desinstalación forzada.
-   - `ForegroundService`: Persistencia de conexión WebSocket, telemetría y reintentos automáticos.
-   - `PowerManager`: Exclusión de optimización de batería (Whitelist Doze) para funcionamiento ininterrumpido.
-2. **`server/`**: Servidor Node.js backend modular con:
-   - Motor de WebSockets (`ws`) bidireccional y de baja latencia con aislamiento multi-inquilino.
-   - Endpoints REST para autenticación (`routes/authRoutes.js`), gestión de dispositivos (`routes/deviceRoutes.js`), suscripciones (`routes/subscriptionRoutes.js`) e informes mensuales (`routes/reportRoutes.js`).
-   - Capa de datos con `@libsql/client` para persistencia en Turso Cloud y fallback a SQLite local.
-   - Módulo `mailer.js` con soporte para SMTP real (Gmail, Outlook, etc.) y cuenta automática Ethereal en desarrollo.
-3. **`parent-dashboard/`**: Single Page Application moderna con estética Glassmorphism, animaciones fluidas, mapas interactivos Leaflet, visualizadores de audio en tiempo real y módulo de informes ejecutivos con soporte `@media print`.
+---
+
+## 📱 Nueva Experiencia Dual en la APK Android
+
+Siguiendo las mejores directrices de diseño móvil (Material Design 3 y skill `mobile-design`), la aplicación para Android ha dejado de ser una pantalla técnica con campos de texto manuales y ahora cuenta con una arquitectura de dos estados:
+
+### 1. Modo Asistente de Vinculación (Setup Wizard)
+Se presenta automáticamente cuando el dispositivo no está vinculado o tras ser liberado:
+- **Tarjeta Hero de Vinculación QR**: Botón prominente `📷 Escanear Código QR de Padres` para apuntar a la pantalla del panel web y emparejarse al instante.
+- **Asistente de Permisos con Guía Paso a Paso**: Indicador visual dinámico (`"Progreso: X de 6 permisos activos"`), tarjetas con retroalimentación cromática (Verde = Concedido, Morado = Pendiente) y botón de acción secuencial `🚀 Otorgar Siguiente Permiso Pendiente`.
+- **Campos Manuales Secundarios**: Disponibles solo como alternativa si el terminal no dispone de cámara. Sin textos predeterminados obsoletos.
+
+### 2. Modo Menor Protegido (Kid Dashboard)
+Se activa inmediatamente una vez que el dispositivo queda vinculado y protegido:
+- **Escudo Protector Verde**: Emblema visual con estado claro: `🟢 Tu teléfono está protegido`.
+- **Saludo Personalizado**: Encabezado familiar con el nombre configurado del menor (`👋 ¡Hola Seba!`).
+- **Tarjeta de Tiempo de Pantalla**: Muestra los minutos restantes del día, los minutos consumidos y una barra de progreso porcentual fluida.
+- **Horario de Descanso**: Indica el rango de horas de dormir programadas para la noche.
+- **Botón de Sincronización Manual**: Permite al menor o tutor forzar una actualización inmediata de políticas.
+
+### 3. Panel de Administración Parental Protegido con PIN
+- En la esquina superior del Dashboard se ubica el botón discreto `⚙️ Ajustes de Padres`.
+- Requiere ingresar el PIN de 4 dígitos configurado por el padre (por defecto: `1234`).
+- Al autenticarse, despliega el menú de gestión:
+  1. 🛠️ **Ver Permisos y Re-vincular QR** (activa ventana de bypass de 15 minutos).
+  2. 🔓 **Desvincular este Dispositivo** (libera el teléfono y reinicia las políticas).
+  3. 🗑️ **Desinstalar KidsShield** (desactiva el administrador de dispositivos y abre la desinstalación del sistema de forma segura).
+
+---
+
+## 💾 Cola Offline y Persistencia Local (SQLite Android)
+
+Para evitar la pérdida de eventos de seguridad cuando el menor se encuentra en zonas sin cobertura o con modo avión activado:
+
+1. **Almacenamiento Local (`OfflineDbHelper`)**:
+   - Tablas locales dedicadas para eventos de seguridad, reportes de uso, coordenadas GPS e historial de pulsaciones de teclado.
+2. **Gestor de Cola Inteligente (`OfflineQueueManager`)**:
+   - Ante fallos de red HTTP, los paquetes se serializan e insertan en la base de datos local SQLite.
+3. **Reintento y Vaciado Automático (`NetworkChangeReceiver`)**:
+   - Mediante un `BroadcastReceiver` del sistema, Android detecta la recuperación del enlace Wi-Fi o datos móviles y despacha en segundo plano todos los eventos acumulados respetando el orden cronológico.
+
+---
+
+## ⏱️ Watchdog Inteligente y Tolerancia en Reposo
+
+El watchdog del servidor (`server/index.js`) implementa detección adaptativa de presencia:
+
+- **Uso Activo**: Timeout de **3 minutos** (180s). Si un teléfono que estaba en uso deja de emitir telemetría de forma súbita, se notifica la alerta al padre.
+- **Pantalla en Reposo / Apagada**: Timeout extendido de **10 minutos** (600s). Cuando el menor apaga la pantalla, la app notifica el evento `Pantalla en reposo / Apagada`. El servidor entra en modo tolerante reconociendo que el procesador de Android se encuentra en suspensión (*Doze Mode*) para preservar la batería.
+- **Sin Alertas Falsas**: Evita que se disparen notificaciones alarmantes de "posible apagado o desinstalación" cada vez que el menor bloquea la pantalla o guarda el teléfono en el bolsillo.
+- **Sincronización del Badge Web**: En el panel web, el Visualizador de Pantalla en Vivo evalúa `currentDevice.isOnline`, mostrando de manera coherente `⚪ Desconectado` cuando el teléfono está fuera de línea en lugar de mostrar falsos positivos de transmisión en vivo.
+
+---
+
+## ⚙️ Guía de Configuración para Dispositivos Xiaomi (MIUI / HyperOS)
+
+Los dispositivos Xiaomi implementan una capa de optimización de batería agresiva (*Gestión de Batería MIUI*) que suspende procesos en segundo plano. Para garantizar un monitoreo ininterrumpido en teléfonos Xiaomi:
+
+1. **Ahorro de Batería sin Restricciones**:
+   - Ve a **Ajustes** ➔ **Aplicaciones** ➔ **Administrar aplicaciones** ➔ busca **KidsShield**.
+   - Ingresa en **Ahorro de batería** y selecciona **"Sin restricciones"**.
+2. **Inicio Automático**:
+   - En la misma pantalla de ajustes de **KidsShield**, activa el interruptor **"Inicio automático"**.
+3. **Poner el Candado en la Multitarea (Apps Recientes)**:
+   - Abre la app KidsShield.
+   - Accede a la pantalla de aplicaciones recientes (gesto de deslizar hacia arriba y mantener, o botón cuadrado).
+   - **Mantén presionada la tarjeta de KidsShield** durante un segundo y presiona el icono del **candado 🔒**.
 
 ---
 
 ## 📑 Informes Mensuales de Uso y Bienestar Digital
 
-KidsShield incorpora un módulo de generación de balances mensuales para brindar a los padres una perspectiva integral sobre los hábitos digitales del menor:
-
-### 1. Métricas Agregadas en Tiempo Real (`GET /api/reports/monthly`)
-- **Tiempo Total de Pantalla**: Suma acumulada de minutos de actividad a lo largo del mes seleccionado.
-- **Promedio Diario**: Cálculo de horas y minutos promedio durante los días en que el dispositivo estuvo en uso.
-- **Días con Actividad**: Recuento de jornadas con conexión y uso registrado.
-- **Alertas de Seguridad**: Registro de incidentes de riesgo, aperturas fuera de horario, salidas de geocercas seguras y palabras peligrosas detectadas por el teclado.
-
-### 2. Desglose Visual por Categorías
-- Clasificación de todas las aplicaciones en las 8 categorías canónicas (**Juegos**, **Redes Sociales**, **Videos**, **Navegación Web**, **Educación**, **Comunicación**, **Utilidades**, **Sistema**).
-- Barras de progreso estilizadas con colores semánticos y porcentaje de impacto sobre el tiempo total del menor.
-
-### 3. Top Aplicaciones Más Utilizadas
-- Listado de las 5 aplicaciones predominantes del período con icono, nombre, categoría, tiempo acumulado (`Xh Ym`) y porcentaje del tiempo total.
-
-### 4. Diagnóstico Pedagógico Automatizado
-- Consejos automáticos adaptados al patrón de consumo del menor (ej. alerta si el ocio supera el 65% del tiempo, felicitaciones si la categoría Educación supera los 60 minutos, o sugerencia de horarios de descanso si el promedio excede las 3 horas diarias).
-
-### 5. Descarga en PDF y Envío por Correo Electrónico
-- **🖨️ Descargar / Imprimir (PDF)**: Activa el diálogo de impresión del navegador con estilos optimizados `@media print`, formateando un documento ejecutivo A4 nítido sin elementos de interfaz redundantes.
-- **✉️ Enviar por Correo**: Despacha el informe directamente a la bandeja de entrada del tutor (`POST /api/reports/monthly/send-email`) mediante una plantilla HTML responsiva con encabezado institucional, tablas de métricas, barras de categoría y resumen pedagógico.
+- **Métricas Agregadas (`GET /api/reports/monthly`)**: Tiempo total mensual, promedio por día activo, jornadas supervisadas y total de incidentes de seguridad.
+- **Desglose en 8 Categorías Canónicas**: Juegos, Redes Sociales, Videos, Navegación Web, Educación, Comunicación, Utilidades y Sistema.
+- **Top 5 Aplicaciones Predominantes**: Tiempo acumulado (`Xh Ym`) y porcentaje relativo.
+- **Diagnóstico Pedagógico Automatizado**: Recomendaciones automáticas para la familia basadas en patrones de consumo.
+- **Exportación Dual**:
+  - 🖨️ **Impresión / PDF**: Formato optimizado para hojas A4 con `@media print`.
+  - ✉️ **Envío por Correo**: Despacho automático de plantilla HTML a través de Nodemailer (`POST /api/reports/monthly/send-email`).
 
 ---
 
-## 📱 Gestión de Aplicaciones Instaladas y Catálogo Canónico
+## 📱 Gestión de Aplicaciones y Catálogo Canónico
 
-El panel de control permite supervisar y configurar cada aplicación del teléfono del menor de manera individual:
-
-- **Catálogo Canónico Unificado**: Tanto los filtros superiores como los selectores desplegables de categoría comparten exactamente las 8 categorías canónicas:
-  1. 🎮 **Juegos**
-  2. 📱 **Redes Sociales**
-  3. 🎬 **Videos**
-  4. 🌐 **Navegación Web**
-  5. 🎓 **Educación**
-  6. 💬 **Comunicación**
-  7. 📁 **Utilidades**
-  8. ⚙️ **Sistema**
-- **Clasificación Flexible**: Los padres pueden cambiar la categoría de cualquier aplicación instalada (por ejemplo, reclasificar YouTube de Entretenimiento a Educación, o TikTok a Redes Sociales) y los cambios se guardan de inmediato en el servidor y en la base de datos.
-- **Límites Diarios Individuales**: Cada aplicación dispone de un selector para establecer un tope diario de 15m, 30m, 45m, 1h, 1.5h o 2 horas. Al alcanzarse el límite, la app se bloquea automáticamente.
-- **Botón de Bloqueo Inmediato**: Permite restringir o permitir el acceso a una aplicación con un solo clic con respuesta visual de alto contraste.
+- **8 Categorías Unificadas**: Sincronización completa entre filtros y menús desplegables.
+- **Clasificación en Tiempo Real**: Reclasificación instantánea con guardado persistente en Turso / SQLite.
+- **Límites Diarios Individuales**: Topes configurables de 15m a 2h por aplicación.
+- **Bloqueo Inmediato**: Interruptores de alta visibilidad para inhabilitar aplicaciones específicas al instante.
 
 ---
 
 ## 🕒 Línea de Tiempo y Filtros por Aplicación
 
-La línea de tiempo de eventos en vivo registra aperturas de aplicaciones, bloqueos, alertas y ubicaciones GPS:
-
-- **Filtros por Tipo de Evento**: Píldoras para visualizar Todos, 🛑 Bloqueos, 🚀 Aperturas o ⚠️ Alertas.
-- **Filtros por Aplicación Simplificados**:
-  - Botón **`🌐 Todas`**: Muestra la actividad cronológica general.
-  - **Chips Rápidos**: Accesos directos a las 3 aplicaciones más utilizadas por el menor.
-  - **Selector Desplegable `🔍 Más aplicaciones...`**: Menú desplegable ordenado alfabéticamente con la totalidad de aplicaciones detectadas en el teléfono, evitando la saturación horizontal de la interfaz.
+- **Filtros por Tipo de Evento**: Píldoras para Todos, 🛑 Bloqueos, 🚀 Aperturas o ⚠️ Alertas.
+- **Selector Inteligente de Aplicaciones**:
+  - `🌐 Todas`: Historial global consolidado.
+  - Chips rápidos con las 3 aplicaciones más usadas.
+  - Menú desplegable alfabético `🔍 Más aplicaciones...` para filtrar cualquier paquete sin sobrecargar la pantalla.
 
 ---
 
 ## 🛡️ Bloqueo Inteligente de Aplicaciones y Dispositivo Unificado
 
-El módulo Android (`child-android-app/`) implementa un sistema unificado y robusto para el bloqueo de aplicaciones individuales y el bloqueo general del dispositivo:
-
-1. **Bloqueo Remoto de Aplicaciones Individuales**:
-   - Desde la pestaña de Dispositivos en el panel de padres, el tutor puede bloquear o desbloquear cualquier aplicación detectada.
-   - El servidor transmite la orden de inmediato por WebSockets (`COMMAND` con `BLOCK_APP:<pkg>` o `UNBLOCK_APP:<pkg>`) y actualiza la lista sincronizada de aplicaciones bloqueadas.
-   - `AppBlockerAccessibilityService`: En cuanto el menor pulsa el icono de la aplicación restringida, el servicio detecta el paquete en primer plano, ejecuta instantáneamente `GLOBAL_ACTION_HOME` para cerrar la aplicación y levanta la pantalla `LockOverlayActivity` indicando el nombre de la app y la razón de bloqueo.
-
-2. **Bloqueo Completo del Dispositivo (Modo Universal "Todas las Apps Detectadas")**:
-   - Al activar el bloqueo remoto del dispositivo desde el panel de padres (`isDeviceLocked = true`), el sistema funciona con la misma mecánica que el bloqueo de aplicaciones individuales, pero extendido a **todas las aplicaciones detectadas** en el teléfono del menor.
-   - El menor puede visualizar su pantalla de inicio (launcher de Android) e interactuar con el sistema sin congelamientos ni pantallas negras forzadas.
-   - Tan pronto el menor intenta abrir **cualquier aplicación** (juegos, navegador, redes sociales, etc.), el servicio de accesibilidad lo detecta al instante, lo expulsa de inmediato al inicio (`GLOBAL_ACTION_HOME`) y muestra la pantalla `LockOverlayActivity` con el aviso *"🔒 Dispositivo Bloqueado"*.
-   - El botón **"Volver al inicio"** permanece accesible para que el menor retorne limpiamente al escritorio.
-
-3. **Excepciones de Seguridad y Emergencia Garantizadas**:
-   - Por seguridad vital, el sistema de bloqueo permite siempre el acceso a:
-     - Teléfono y llamadas de emergencia (`com.android.phone`, marcador telefónico del sistema).
-     - Componentes del sistema operativo e interfaz de usuario (`com.android.systemui`).
-     - Lanzador de aplicaciones principal (Home launcher dinámico).
-     - La propia aplicación de KidsShield para sincronización y configuración parental.
-   - Protege activamente la pantalla de Ajustes del sistema (`com.android.settings`) para impedir que se apague el GPS, se desinstale la app o se revoquen los permisos.
+1. **Bloqueo de Apps Individuales**: El servicio de accesibilidad expulsa la app restringida (`GLOBAL_ACTION_HOME`) y despliega `LockOverlayActivity` con la razón del bloqueo.
+2. **Bloqueo Total del Dispositivo**: Permite al menor ver su pantalla de inicio, pero bloquea el ingreso a cualquier aplicación detectada mostrando el aviso de dispositivo bloqueado y botón de retorno.
+3. **Excepciones Vitales**: Llamadas de emergencia (`com.android.phone`), sistema (`com.android.systemui`), launcher y KidsShield permanecen siempre accesibles. Se protege el menú de ajustes del sistema contra manipulaciones.
 
 ---
 
@@ -190,10 +196,10 @@ El módulo Android (`child-android-app/`) implementa un sistema unificado y robu
 ### Servidor / Panel Web:
 - **Node.js**: Versión 18.0.0 o superior.
 - **NPM**: Versión 8.0.0 o superior.
-- **Conexión a Internet**: Para sincronización con Turso Cloud, Google Auth y envío de correos.
+- **Conectividad**: Acceso a Internet o red local/Tailscale.
 
 ### Dispositivo del Menor (Android):
-- **Sistema Operativo**: Android 8.0 (Oreo / API 26) hasta Android 14 (Upside Down Cake / API 34).
+- **Sistema Operativo**: Android 8.0 (API 26) hasta Android 14 (API 34).
 - **Servicios de Google Play**: Compatibilidad total.
 
 ---
@@ -202,44 +208,57 @@ El módulo Android (`child-android-app/`) implementa un sistema unificado y robu
 
 ### 1. Configuración del Servidor y Base de Datos
 
-1. Clona o descarga el repositorio en tu máquina:
+1. Clona el repositorio:
    ```bash
-   git clone https://github.com/tu-usuario/KidsShield.git
+   git clone https://github.com/sebastianbriones-g/KidsShield.git
    cd KidsShield
    ```
 
-2. Ingresa al directorio del servidor e instala dependencias:
+2. Instala las dependencias del servidor:
    ```bash
    cd server
    npm install
    ```
 
-3. Crea el archivo de variables de entorno `.env` en la carpeta `server/`:
+3. Crea el archivo `.env` en la carpeta `server/` (puedes tomar como base `.env.example`):
    ```env
    PORT=3000
-   JWT_SECRET=tu_clave_secreta_jwt_muy_segura
+   JWT_SECRET=clave_secreta_jwt_para_firmar_sesiones
    TURSO_DATABASE_URL=libsql://tu-base-datos.turso.io
    TURSO_AUTH_TOKEN=tu_token_de_autenticacion_turso
    GOOGLE_CLIENT_ID=tu_google_client_id.apps.googleusercontent.com
 
-   # Configuración de Correo Electrónico (SMTP)
+   # Configuración SMTP (Opcional - Ethereal Email se usará de forma predeterminada si se deja en blanco)
    SMTP_HOST=smtp.gmail.com
    SMTP_PORT=587
    SMTP_USER=tu_correo@gmail.com
-   SMTP_PASS=tu_contraseña_de_aplicacion
-   SMTP_FROM="KidsShield Seguridad Familiar" <tu_correo@gmail.com>
+   SMTP_PASS=tu_password_de_aplicacion
+   SMTP_FROM="KidsShield Soporte" <tu_correo@gmail.com>
    ```
-   > **Nota**: Si dejas las variables `SMTP_*` en blanco, el servidor generará automáticamente una cuenta de prueba gratuita en **Ethereal Mail**, imprimiendo los enlaces directos de previsualización en la consola.
 
-4. Inicia el servidor:
+4. Inicia el servidor (o usa `iniciar-panel.bat` en Windows):
    ```bash
    node index.js
    ```
 
-5. Accede al panel de control desde tu navegador web:
+5. Abre el panel web en tu navegador:
    ```text
    http://localhost:3000
    ```
+
+### 2. Instalación y Vinculación de la APK en el Móvil
+
+1. Descarga e instala `KidsShield-v1.0.apk` directamente desde el botón del panel web o transfiriendo el binario `KidsShield-v1.0.0-release.apk`.
+2. Abre la aplicación en el móvil: verás el nuevo **Asistente de Inicio**.
+3. En el panel web de tu PC, haz clic en **"🔗 Vincular QR"** o **"➕ Dispositivo"**.
+4. En el móvil, pulsa **"📷 Escanear Código QR de Padres"** y apunta a la pantalla: la app se emparejará de forma instantánea.
+5. Otorga los permisos requeridos usando el botón `🚀 Otorgar Siguiente Permiso Pendiente`: la app pasará de inmediato al **Dashboard del Menor Protegido**.
+
+### 3. Conectividad Remota con Tailscale o Red Local
+
+KidsShield detecta automáticamente interfaces de Tailscale y direcciones LAN:
+- Enlace Tailscale: `http://100.74.204.90:3000` (o nombre de nodo `http://note:3000`).
+- Enlace Local LAN: `http://192.168.x.x:3000` o `http://localhost:3000`.
 
 ---
 
@@ -250,18 +269,23 @@ KidsShield/
 ├── KidsShield-v1.0.apk             # Binario APK v1.0 listo para instalar
 ├── KidsShield-v1.0.0.apk           # Binario APK estándar
 ├── KidsShield-v1.0.0-release.apk   # Binario APK firmado para producción
-├── iniciar-panel.bat               # Script de inicio rápido con detección de IPs para Windows
+├── iniciar-panel.bat               # Script de inicio rápido con detección de red para Windows
 ├── README.md                       # Documentación principal en español
 ├── LEEME.md                        # Documentación complementaria sincronizada
 ├── .gitignore                      # Reglas de exclusión para Git
+├── .agents/                        # Customizaciones y skills de agentes de desarrollo
+│   └── skills/
+│       ├── mobile-design/          # Pautas de UX/UI móvil (Material You, microinteracciones)
+│       ├── brainstorming/          # Flujos de ideación y diseño guiado
+│       └── systematic-debugging/   # Protocolos de depuración sistemática
 ├── parent-dashboard/               # Frontend del Panel de Control de Padres
-│   ├── index.html                  # Interfaz Glassmorphism, informes mensuales y modales
+│   ├── index.html                  # Interfaz Glassmorphism, simulador y modales
 │   ├── app.js                      # Lógica cliente, WebSockets, reportes, audio y navegación
 │   ├── style.css                   # Hoja de estilos con reglas de impresión y temas
 │   └── KidsShield-v1.0.apk         # Copia descargable desde el panel web
 ├── server/                         # Backend en Node.js
-│   ├── index.js                    # Servidor Express, montaje de rutas y WebSockets
-│   ├── db.js                       # Capa de datos Turso LibSQL / SQLite
+│   ├── index.js                    # Servidor Express, Watchdog inteligente y WebSockets
+│   ├── db.js                       # Capa de datos Turso LibSQL / SQLite local
 │   ├── mailer.js                   # Módulo de correos con nodemailer (reset e informes)
 │   ├── package.json                # Dependencias del servidor (express, ws, nodemailer, etc.)
 │   ├── routes/                     # Rutas modulares de la API REST
@@ -273,12 +297,41 @@ KidsShield/
 │       └── socketManager.js        # Aislamiento multi-inquilino y eventos en tiempo real
 └── child-android-app/              # Código fuente nativo de la app Android
     ├── app/                        # Módulo principal Android (Java 17, SDK 34)
+    │   └── src/main/
+    │       ├── java/com/kidsguard/parentalcontrol/
+    │       │   ├── MainActivity.java         # Actividad dual: Wizard y Kid Dashboard
+    │       │   ├── database/                 # Cola offline SQLite (OfflineDbHelper, OfflineQueueManager)
+    │       │   ├── models/ParentalConfig.java# Configuración reactiva y SharedPreferences
+    │       │   ├── network/                  # SyncClient HTTP y WebSocketManager
+    │       │   ├── receivers/                # DeviceAdminReceiver y NetworkChangeReceiver
+    │       │   └── services/                 # AppBlockerAccessibilityService y UsageMonitorService
+    │       └── res/                          # Layouts Material You, drawables y valores
+    ├── kidsshield-release.jks      # Keystore de firma de producción
     ├── build.gradle                # Configuración de compilación Gradle
-    └── gradlew.bat                 # Wrapper de Gradle para compilación
+    └── gradlew.bat                 # Wrapper de Gradle para Windows
 ```
 
 ---
 
-## 📄 Licencia y Aviso Legal
+## 🔨 Recompilación de la App Android
+
+Si realizas modificaciones en el código fuente de `child-android-app`:
+
+1. Asegúrate de tener configurado JDK 17:
+   ```powershell
+   $env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot"
+   ```
+2. Ejecuta la compilación del binario release firmado:
+   ```powershell
+   cd child-android-app
+   .\gradlew.bat assembleRelease
+   ```
+3. El archivo resultante se generará en:
+   `child-android-app/app/build/outputs/apk/release/app-release.apk`
+4. Cópialo a la carpeta `parent-dashboard/` y a la raíz para actualizar los instaladores disponibles.
+
+---
+
+## 📄 Aviso Legal
 
 Este software ha sido diseñado con fines exclusivos de control parental, bienestar digital y supervisión de menores de edad bajo la tutela de sus padres o tutores legales. El uso no autorizado o con fines de vigilancia ilícita está estrictamente prohibido.

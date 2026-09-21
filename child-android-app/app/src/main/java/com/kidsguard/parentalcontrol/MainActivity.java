@@ -1,21 +1,26 @@
 package com.kidsguard.parentalcontrol;
 
+import android.Manifest;
 import android.app.AppOpsManager;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.location.LocationManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.Manifest;
-import android.content.pm.PackageManager;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -30,14 +35,15 @@ import com.kidsguard.parentalcontrol.receivers.DeviceAdminReceiver;
 import com.kidsguard.parentalcontrol.services.AppBlockerAccessibilityService;
 import com.kidsguard.parentalcontrol.services.UsageMonitorService;
 
-import android.location.LocationManager;
-import android.os.PowerManager;
-import android.widget.TextView;
-
 import org.json.JSONObject;
 
 public class MainActivity extends AppCompatActivity {
 
+    // Views: Layout Containers
+    private LinearLayout layoutSetupWizard;
+    private LinearLayout layoutKidDashboard;
+
+    // Views: Setup Wizard
     private TextView tvPermissionsSummaryCount;
     private Button btnGrantNextMissingPermission;
     private Button btnGrantUsageAccess;
@@ -51,6 +57,15 @@ public class MainActivity extends AppCompatActivity {
     private Button btnUninstallApp;
     private EditText inputServerUrl;
     private EditText inputDeviceId;
+
+    // Views: Kid Dashboard
+    private Button btnParentSettings;
+    private TextView tvKidGreeting;
+    private TextView tvKidScreenTimeRemaining;
+    private ProgressBar pbKidScreenTime;
+    private TextView tvKidScreenTime;
+    private TextView tvKidBedtimeStatus;
+    private Button btnKidSyncNow;
 
     private DevicePolicyManager devicePolicyManager;
     private ComponentName adminComponent;
@@ -68,6 +83,7 @@ public class MainActivity extends AppCompatActivity {
                     String sUrl = obj.optString("serverUrl");
                     String dId = obj.optString("deviceId");
                     String pin = obj.optString("pin");
+                    String childName = obj.optString("childName", "");
 
                     ParentalConfig config = ParentalConfig.getInstance(this);
 
@@ -82,10 +98,21 @@ public class MainActivity extends AppCompatActivity {
                     if (!TextUtils.isEmpty(pin)) {
                         config.setParentPin(pin);
                     }
+                    if (!TextUtils.isEmpty(childName)) {
+                        config.setChildName(childName);
+                    }
 
-                    Toast.makeText(this, "✅ ¡Vinculado con éxito con el panel de padres!", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "✅ ¡Dispositivo vinculado exitosamente!", Toast.LENGTH_LONG).show();
+
+                    // Si ya tiene los permisos, iniciar de una vez
+                    if (hasEssentialPermissions()) {
+                        startProtectionService();
+                    } else {
+                        Toast.makeText(this, "🛡️ Por favor otorga los permisos faltantes para completar la protección.", Toast.LENGTH_LONG).show();
+                        updateUiState();
+                    }
                 } catch (Exception e) {
-                    // Texto plano o formato alternativo
+                    // Si el código escaneado es una URL o ID directo
                     if (contents.startsWith("http")) {
                         inputServerUrl.setText(contents);
                         ParentalConfig.getInstance(this).setServerUrl(contents);
@@ -95,6 +122,7 @@ public class MainActivity extends AppCompatActivity {
                         ParentalConfig.getInstance(this).setDeviceId(contents);
                         Toast.makeText(this, "ID de dispositivo configurado", Toast.LENGTH_SHORT).show();
                     }
+                    updateUiState();
                 }
             }
     );
@@ -108,9 +136,9 @@ public class MainActivity extends AppCompatActivity {
         adminComponent = new ComponentName(this, DeviceAdminReceiver.class);
 
         initViews();
-        checkPermissionsState();
         bindListeners();
         requestRuntimePermissionsIfNeeded();
+        updateUiState();
     }
 
     private void requestRuntimePermissionsIfNeeded() {
@@ -141,10 +169,14 @@ public class MainActivity extends AppCompatActivity {
         if (!config.isProtectionActive()) {
             config.grantAdminBypass(15);
         }
-        checkPermissionsState();
+        updateUiState();
     }
 
     private void initViews() {
+        layoutSetupWizard = findViewById(R.id.layoutSetupWizard);
+        layoutKidDashboard = findViewById(R.id.layoutKidDashboard);
+
+        // Setup Wizard views
         tvPermissionsSummaryCount = findViewById(R.id.tvPermissionsSummaryCount);
         btnGrantNextMissingPermission = findViewById(R.id.btnGrantNextMissingPermission);
         btnGrantUsageAccess = findViewById(R.id.btnGrantUsageAccess);
@@ -159,9 +191,73 @@ public class MainActivity extends AppCompatActivity {
         inputServerUrl = findViewById(R.id.inputServerUrl);
         inputDeviceId = findViewById(R.id.inputDeviceId);
 
+        // Kid Dashboard views
+        btnParentSettings = findViewById(R.id.btnParentSettings);
+        tvKidGreeting = findViewById(R.id.tvKidGreeting);
+        tvKidScreenTimeRemaining = findViewById(R.id.tvKidScreenTimeRemaining);
+        pbKidScreenTime = findViewById(R.id.pbKidScreenTime);
+        tvKidScreenTime = findViewById(R.id.tvKidScreenTime);
+        tvKidBedtimeStatus = findViewById(R.id.tvKidBedtimeStatus);
+        btnKidSyncNow = findViewById(R.id.btnKidSyncNow);
+
         ParentalConfig config = ParentalConfig.getInstance(this);
-        inputServerUrl.setText(config.getServerUrl());
-        inputDeviceId.setText(config.getDeviceId());
+        if (inputServerUrl != null) {
+            String sUrl = config.getServerUrl();
+            if (!TextUtils.isEmpty(sUrl)) inputServerUrl.setText(sUrl);
+        }
+        if (inputDeviceId != null) {
+            String dId = config.getDeviceId();
+            if (!TextUtils.isEmpty(dId)) inputDeviceId.setText(dId);
+        }
+    }
+
+    private void updateUiState() {
+        ParentalConfig config = ParentalConfig.getInstance(this);
+        boolean isLinkedAndActive = config.isProtectionActive() && config.isDeviceLinked();
+
+        if (isLinkedAndActive) {
+            if (layoutKidDashboard != null) layoutKidDashboard.setVisibility(View.VISIBLE);
+            if (layoutSetupWizard != null) layoutSetupWizard.setVisibility(View.GONE);
+            updateKidDashboardData();
+        } else {
+            if (layoutKidDashboard != null) layoutKidDashboard.setVisibility(View.GONE);
+            if (layoutSetupWizard != null) layoutSetupWizard.setVisibility(View.VISIBLE);
+            checkPermissionsState();
+        }
+    }
+
+    private void updateKidDashboardData() {
+        ParentalConfig config = ParentalConfig.getInstance(this);
+        String childName = config.getChildName();
+        if (TextUtils.isEmpty(childName)) childName = "Hijo";
+
+        if (tvKidGreeting != null) {
+            tvKidGreeting.setText("👋 ¡Hola " + childName + "!");
+        }
+
+        int usedMinutes = UsageMonitorService.getTodayUsageMinutes(this, null);
+        int dailyLimit = config.getDailyLimitMinutes();
+        if (dailyLimit <= 0) dailyLimit = 1440;
+
+        int remaining = Math.max(0, dailyLimit - usedMinutes);
+        if (dailyLimit >= 1440) {
+            if (tvKidScreenTimeRemaining != null) tvKidScreenTimeRemaining.setText("Sin límite hoy");
+            if (tvKidScreenTime != null) tvKidScreenTime.setText(usedMinutes + " min de pantalla hoy");
+            if (pbKidScreenTime != null) pbKidScreenTime.setProgress(0);
+        } else {
+            if (tvKidScreenTimeRemaining != null) tvKidScreenTimeRemaining.setText(remaining + " min restantes");
+            if (tvKidScreenTime != null) tvKidScreenTime.setText(usedMinutes + " min usados de " + dailyLimit + " min");
+            int pct = Math.min(100, (int) ((usedMinutes / (float) dailyLimit) * 100));
+            if (pbKidScreenTime != null) pbKidScreenTime.setProgress(pct);
+        }
+
+        if (tvKidBedtimeStatus != null) {
+            if (config.isBedtimeEnabled()) {
+                tvKidBedtimeStatus.setText("Hora de dormir: de " + config.getBedtimeStart() + " a " + config.getBedtimeEnd());
+            } else {
+                tvKidBedtimeStatus.setText("Modo descanso no programado");
+            }
+        }
     }
 
     private boolean isGpsEnabled() {
@@ -180,6 +276,40 @@ public class MainActivity extends AppCompatActivity {
         return true;
     }
 
+    private boolean hasUsageStatsPermission() {
+        AppOpsManager appOps = (AppOpsManager) getSystemService(Context.APP_OPS_SERVICE);
+        if (appOps == null) return false;
+        int mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(), getPackageName());
+        return mode == AppOpsManager.MODE_ALLOWED;
+    }
+
+    private boolean isAccessibilityServiceEnabled() {
+        if (AppBlockerAccessibilityService.isServiceRunning()) return true;
+        try {
+            int accessibilityEnabled = Settings.Secure.getInt(
+                    getContentResolver(),
+                    Settings.Secure.ACCESSIBILITY_ENABLED);
+            if (accessibilityEnabled == 1) {
+                String settingValue = Settings.Secure.getString(
+                        getContentResolver(),
+                        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+                if (settingValue != null && settingValue.contains(getPackageName())) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    private boolean isDeviceAdminActive() {
+        return devicePolicyManager != null && devicePolicyManager.isAdminActive(adminComponent);
+    }
+
+    private boolean hasEssentialPermissions() {
+        return hasUsageStatsPermission() && isAccessibilityServiceEnabled();
+    }
+
     private void checkPermissionsState() {
         int grantedCount = 0;
         int totalPermissions = 6;
@@ -188,120 +318,128 @@ public class MainActivity extends AppCompatActivity {
         boolean hasUsage = hasUsageStatsPermission();
         if (hasUsage) {
             grantedCount++;
-            btnGrantUsageAccess.setText("✓ Concedido");
-            btnGrantUsageAccess.setBackgroundColor(0xFF10B981);
-            btnGrantUsageAccess.setEnabled(false);
+            if (btnGrantUsageAccess != null) {
+                btnGrantUsageAccess.setText("✓ Concedido");
+                btnGrantUsageAccess.setBackgroundColor(0xFF10B981);
+                btnGrantUsageAccess.setEnabled(false);
+            }
         } else {
-            btnGrantUsageAccess.setText("Conceder Acceso a Uso");
-            btnGrantUsageAccess.setBackgroundColor(0xFF6366F1);
-            btnGrantUsageAccess.setEnabled(true);
+            if (btnGrantUsageAccess != null) {
+                btnGrantUsageAccess.setText("Conceder Acceso a Uso");
+                btnGrantUsageAccess.setBackgroundColor(0xFF6366F1);
+                btnGrantUsageAccess.setEnabled(true);
+            }
         }
 
         // 2. Accessibility
         boolean hasA11y = isAccessibilityServiceEnabled();
         if (hasA11y) {
             grantedCount++;
-            btnGrantAccessibility.setText("✓ Concedido");
-            btnGrantAccessibility.setBackgroundColor(0xFF10B981);
-            btnGrantAccessibility.setEnabled(false);
+            if (btnGrantAccessibility != null) {
+                btnGrantAccessibility.setText("✓ Concedido");
+                btnGrantAccessibility.setBackgroundColor(0xFF10B981);
+                btnGrantAccessibility.setEnabled(false);
+            }
         } else {
-            btnGrantAccessibility.setText("Activar Accesibilidad");
-            btnGrantAccessibility.setBackgroundColor(0xFF6366F1);
-            btnGrantAccessibility.setEnabled(true);
+            if (btnGrantAccessibility != null) {
+                btnGrantAccessibility.setText("Activar Accesibilidad");
+                btnGrantAccessibility.setBackgroundColor(0xFF6366F1);
+                btnGrantAccessibility.setEnabled(true);
+            }
         }
 
         // 3. Overlay
         boolean hasOverlay = (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this));
         if (hasOverlay) {
             grantedCount++;
-            btnGrantOverlay.setText("✓ Concedido");
-            btnGrantOverlay.setBackgroundColor(0xFF10B981);
-            btnGrantOverlay.setEnabled(false);
+            if (btnGrantOverlay != null) {
+                btnGrantOverlay.setText("✓ Concedido");
+                btnGrantOverlay.setBackgroundColor(0xFF10B981);
+                btnGrantOverlay.setEnabled(false);
+            }
         } else {
-            btnGrantOverlay.setText("Habilitar Superposición");
-            btnGrantOverlay.setBackgroundColor(0xFF6366F1);
-            btnGrantOverlay.setEnabled(true);
+            if (btnGrantOverlay != null) {
+                btnGrantOverlay.setText("Permitir Superposición");
+                btnGrantOverlay.setBackgroundColor(0xFF6366F1);
+                btnGrantOverlay.setEnabled(true);
+            }
         }
 
         // 4. Location GPS
         boolean hasGps = isGpsEnabled();
-        if (btnGrantLocation != null) {
-            if (hasGps) {
-                grantedCount++;
-                btnGrantLocation.setText("✓ Concedido (GPS Satelital Activo)");
+        if (hasGps) {
+            grantedCount++;
+            if (btnGrantLocation != null) {
+                btnGrantLocation.setText("✓ Concedido");
                 btnGrantLocation.setBackgroundColor(0xFF10B981);
                 btnGrantLocation.setEnabled(false);
-            } else {
-                btnGrantLocation.setText("Activar Ubicación GPS Continua");
+            }
+        } else {
+            if (btnGrantLocation != null) {
+                btnGrantLocation.setText("Conceder Ubicación");
                 btnGrantLocation.setBackgroundColor(0xFF6366F1);
                 btnGrantLocation.setEnabled(true);
             }
         }
 
         // 5. Device Admin
-        boolean hasAdmin = devicePolicyManager.isAdminActive(adminComponent);
+        boolean hasAdmin = isDeviceAdminActive();
         if (hasAdmin) {
             grantedCount++;
-            btnGrantDeviceAdmin.setText("✓ Concedido");
-            btnGrantDeviceAdmin.setBackgroundColor(0xFF10B981);
-            btnGrantDeviceAdmin.setEnabled(false);
+            if (btnGrantDeviceAdmin != null) {
+                btnGrantDeviceAdmin.setText("✓ Concedido");
+                btnGrantDeviceAdmin.setBackgroundColor(0xFF10B981);
+                btnGrantDeviceAdmin.setEnabled(false);
+            }
         } else {
-            btnGrantDeviceAdmin.setText("Activar Administrador");
-            btnGrantDeviceAdmin.setBackgroundColor(0xFF6366F1);
-            btnGrantDeviceAdmin.setEnabled(true);
+            if (btnGrantDeviceAdmin != null) {
+                btnGrantDeviceAdmin.setText("Activar Administrador");
+                btnGrantDeviceAdmin.setBackgroundColor(0xFF6366F1);
+                btnGrantDeviceAdmin.setEnabled(true);
+            }
         }
 
-        // 6. Battery Optimization
+        // 6. Battery Opt
         boolean hasBattery = hasBatteryOptExemption();
-        if (btnGrantBatteryOpt != null) {
-            if (hasBattery) {
-                grantedCount++;
-                btnGrantBatteryOpt.setText("✓ Concedido (Sin Restricciones)");
+        if (hasBattery) {
+            grantedCount++;
+            if (btnGrantBatteryOpt != null) {
+                btnGrantBatteryOpt.setText("✓ Concedido");
                 btnGrantBatteryOpt.setBackgroundColor(0xFF10B981);
                 btnGrantBatteryOpt.setEnabled(false);
-            } else {
-                btnGrantBatteryOpt.setText("Permitir Ejecución Permanente");
+            }
+        } else {
+            if (btnGrantBatteryOpt != null) {
+                btnGrantBatteryOpt.setText("Desactivar Optimización");
                 btnGrantBatteryOpt.setBackgroundColor(0xFF6366F1);
                 btnGrantBatteryOpt.setEnabled(true);
             }
         }
 
-        // Update Summary Card
+        // Resumen
         if (tvPermissionsSummaryCount != null) {
             if (grantedCount == totalPermissions) {
-                tvPermissionsSummaryCount.setText("🎉 ¡Excelente! Los " + totalPermissions + " permisos requeridos están completamente activos.");
+                tvPermissionsSummaryCount.setText("✅ ¡Todos los permisos están activos! (" + grantedCount + "/" + totalPermissions + ")");
                 tvPermissionsSummaryCount.setTextColor(0xFF34D399);
+                if (btnGrantNextMissingPermission != null) {
+                    btnGrantNextMissingPermission.setText("✓ Todos los permisos concedidos");
+                    btnGrantNextMissingPermission.setBackgroundColor(0xFF10B981);
+                    btnGrantNextMissingPermission.setEnabled(false);
+                }
             } else {
-                tvPermissionsSummaryCount.setText("⚠️ " + grantedCount + " de " + totalPermissions + " permisos activos. Faltan " + (totalPermissions - grantedCount) + " para proteger el equipo.");
-                tvPermissionsSummaryCount.setTextColor(0xFFFBBF24);
+                tvPermissionsSummaryCount.setText("Progreso: " + grantedCount + " de " + totalPermissions + " permisos activos");
+                tvPermissionsSummaryCount.setTextColor(0xFFA5B4FC);
+                if (btnGrantNextMissingPermission != null) {
+                    btnGrantNextMissingPermission.setText("🚀 Otorgar Siguiente Permiso Faltante");
+                    btnGrantNextMissingPermission.setBackgroundColor(0xFF4F46E5);
+                    btnGrantNextMissingPermission.setEnabled(true);
+                }
             }
         }
-
-        if (btnGrantNextMissingPermission != null) {
-            if (grantedCount == totalPermissions) {
-                btnGrantNextMissingPermission.setText("✓ ¡Todos los Permisos Listos! Iniciar Protección");
-                btnGrantNextMissingPermission.setBackgroundColor(0xFF10B981);
-            } else {
-                String nextName = getNextMissingPermissionTitle();
-                btnGrantNextMissingPermission.setText("🚀 Otorgar Siguiente Permiso: " + nextName);
-                btnGrantNextMissingPermission.setBackgroundColor(0xFF4F46E5);
-            }
-        }
-    }
-
-    private String getNextMissingPermissionTitle() {
-        if (!hasUsageStatsPermission()) return "1. Datos de Uso";
-        if (!isAccessibilityServiceEnabled()) return "2. Accesibilidad";
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) return "3. Superposición";
-        if (!isGpsEnabled()) return "4. Ubicación GPS";
-        if (!devicePolicyManager.isAdminActive(adminComponent)) return "5. Administrador";
-        if (!hasBatteryOptExemption()) return "6. Batería";
-        return "Todos Listos";
     }
 
     private void grantNextMissingPermission() {
-        ParentalConfig.getInstance(this).grantAdminBypass(10);
-
+        ParentalConfig.getInstance(this).grantAdminBypass(15);
         if (!hasUsageStatsPermission()) {
             startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
             return;
@@ -311,7 +449,8 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
+            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
             startActivity(intent);
             return;
         }
@@ -327,10 +466,11 @@ public class MainActivity extends AppCompatActivity {
             }
             return;
         }
-        if (!devicePolicyManager.isAdminActive(adminComponent)) {
+        if (!isDeviceAdminActive()) {
             Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
             intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
-            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Requerido para evitar la desinstalación no autorizada de KidsShield.");
+            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                    "Requerido para evitar la desinstalación no autorizada de KidsShield.");
             startActivity(intent);
             return;
         }
@@ -340,209 +480,247 @@ public class MainActivity extends AppCompatActivity {
                         Uri.parse("package:" + getPackageName()));
                 startActivity(intent);
             }
-            return;
+        }
+    }
+
+    private void startProtectionService() {
+        ParentalConfig config = ParentalConfig.getInstance(this);
+        config.setProtectionActive(true);
+        config.setAdminBypassUntil(0L);
+
+        Intent serviceIntent = new Intent(this, UsageMonitorService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
         }
 
-        Toast.makeText(this, "✓ ¡Todos los permisos están activos! Pulsa 'Iniciar Monitoreo'.", Toast.LENGTH_SHORT).show();
+        SyncClient.sendReport(this, 100, 0, getPackageName(), null, null);
+        Toast.makeText(this, "¡Protección KidsShield iniciada correctamente!", Toast.LENGTH_LONG).show();
+        updateUiState();
+    }
+
+    private void showParentPinDialog(final Runnable onPinSuccess) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Ajustes de Padres");
+        builder.setMessage("Ingresa el PIN parental de seguridad para continuar:");
+
+        final EditText inputPin = new EditText(this);
+        inputPin.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        inputPin.setHint("••••");
+        builder.setView(inputPin);
+
+        builder.setPositiveButton("Ingresar", (dialog, which) -> {
+            String enteredPin = inputPin.getText().toString().trim();
+            ParentalConfig cfg = ParentalConfig.getInstance(this);
+            if (enteredPin.equals(cfg.getParentPin())) {
+                onPinSuccess.run();
+            } else {
+                Toast.makeText(this, "⛔ PIN Incorrecto.", Toast.LENGTH_LONG).show();
+            }
+        });
+
+        builder.setNegativeButton("Cancelar", null);
+        builder.show();
+    }
+
+    private void showParentSettingsMenu() {
+        showParentPinDialog(() -> {
+            String[] options = {
+                    "🛠️ Ver Permisos y Re-vincular QR",
+                    "🔓 Desvincular este Dispositivo",
+                    "🗑️ Desinstalar KidsShield"
+            };
+
+            new AlertDialog.Builder(this)
+                    .setTitle("Administración Parental")
+                    .setItems(options, (dialog, which) -> {
+                        ParentalConfig cfg = ParentalConfig.getInstance(this);
+                        if (which == 0) {
+                            // Abrir asistente
+                            cfg.grantAdminBypass(15);
+                            if (layoutKidDashboard != null) layoutKidDashboard.setVisibility(View.GONE);
+                            if (layoutSetupWizard != null) layoutSetupWizard.setVisibility(View.VISIBLE);
+                            checkPermissionsState();
+                        } else if (which == 1) {
+                            // Desvincular
+                            cfg.releaseAndUnlink();
+                            stopService(new Intent(this, UsageMonitorService.class));
+                            Toast.makeText(this, "✅ Dispositivo desvinculado.", Toast.LENGTH_SHORT).show();
+                            updateUiState();
+                        } else if (which == 2) {
+                            // Desinstalar
+                            try {
+                                devicePolicyManager.removeActiveAdmin(adminComponent);
+                            } catch (Exception ignored) {}
+                            stopService(new Intent(this, UsageMonitorService.class));
+                            Intent uninstallIntent = new Intent(Intent.ACTION_DELETE);
+                            uninstallIntent.setData(Uri.parse("package:" + getPackageName()));
+                            startActivity(uninstallIntent);
+                            finish();
+                        }
+                    })
+                    .setNegativeButton("Cerrar", null)
+                    .show();
+        });
     }
 
     private void bindListeners() {
-        // 0. QR Scan Pairing
-        // Botón del Asistente Global: Otorgar Siguiente Permiso Faltante
         if (btnGrantNextMissingPermission != null) {
-            btnGrantNextMissingPermission.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    grantNextMissingPermission();
-                }
-            });
+            btnGrantNextMissingPermission.setOnClickListener(v -> grantNextMissingPermission());
         }
 
         if (btnScanQrPairing != null) {
-            btnScanQrPairing.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-                            checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                        requestPermissions(new String[]{Manifest.permission.CAMERA}, 102);
-                        return;
-                    }
-                    ScanOptions options = new ScanOptions();
-                    options.setPrompt("Apunta la cámara al código QR en el panel de padres");
-                    options.setBeepEnabled(true);
-                    options.setOrientationLocked(false);
-                    barcodeLauncher.launch(options);
+            btnScanQrPairing.setOnClickListener(v -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                        checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{Manifest.permission.CAMERA}, 102);
+                    return;
                 }
+                ScanOptions options = new ScanOptions();
+                options.setPrompt("Apunta la cámara al código QR en el panel web");
+                options.setBeepEnabled(true);
+                options.setOrientationLocked(false);
+                barcodeLauncher.launch(options);
             });
         }
 
-        // 1. Usage Stats intent
-        btnGrantUsageAccess.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
+        if (btnGrantUsageAccess != null) {
+            btnGrantUsageAccess.setOnClickListener(v -> {
                 ParentalConfig.getInstance(MainActivity.this).grantAdminBypass(10);
-                Intent intent = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
-                startActivity(intent);
-            }
-        });
+                startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
+            });
+        }
 
-        // 2. Accessibility intent
-        btnGrantAccessibility.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
+        if (btnGrantAccessibility != null) {
+            btnGrantAccessibility.setOnClickListener(v -> {
                 ParentalConfig.getInstance(MainActivity.this).grantAdminBypass(10);
-                Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
-                startActivity(intent);
-            }
-        });
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            });
+        }
 
-        // 3. Overlay intent
-        btnGrantOverlay.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
+        if (btnGrantOverlay != null) {
+            btnGrantOverlay.setOnClickListener(v -> {
                 ParentalConfig.getInstance(MainActivity.this).grantAdminBypass(10);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                             Uri.parse("package:" + getPackageName()));
                     startActivity(intent);
                 }
-            }
-        });
+            });
+        }
 
-        // 4. Location GPS intent
         if (btnGrantLocation != null) {
-            btnGrantLocation.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    ParentalConfig.getInstance(MainActivity.this).grantAdminBypass(10);
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-                            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                        requestPermissions(new String[]{
-                                Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.ACCESS_COARSE_LOCATION
-                        }, 101);
-                    } else {
-                        startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
-                    }
+            btnGrantLocation.setOnClickListener(v -> {
+                ParentalConfig.getInstance(MainActivity.this).grantAdminBypass(10);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                        checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                    }, 101);
+                } else {
+                    startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
                 }
             });
         }
 
-        // 5. Device Admin intent
-        btnGrantDeviceAdmin.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
+        if (btnGrantDeviceAdmin != null) {
+            btnGrantDeviceAdmin.setOnClickListener(v -> {
                 ParentalConfig.getInstance(MainActivity.this).grantAdminBypass(10);
                 Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
                 intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
                 intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
                         "Requerido para evitar la desinstalación no autorizada de KidsShield.");
                 startActivity(intent);
-            }
-        });
+            });
+        }
 
-        // 6. Battery Optimization intent
         if (btnGrantBatteryOpt != null) {
-            btnGrantBatteryOpt.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    ParentalConfig.getInstance(MainActivity.this).grantAdminBypass(10);
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                Uri.parse("package:" + getPackageName()));
-                        startActivity(intent);
-                    }
+            btnGrantBatteryOpt.setOnClickListener(v -> {
+                ParentalConfig.getInstance(MainActivity.this).grantAdminBypass(10);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            Uri.parse("package:" + getPackageName()));
+                    startActivity(intent);
                 }
             });
         }
 
-        // Start Protection
-        btnStartProtection.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
+        // Start Protection Button (Setup Wizard)
+        if (btnStartProtection != null) {
+            btnStartProtection.setOnClickListener(v -> {
                 ParentalConfig config = ParentalConfig.getInstance(MainActivity.this);
-                config.setServerUrl(inputServerUrl.getText().toString().trim());
-                config.setDeviceId(inputDeviceId.getText().toString().trim());
-                config.setProtectionActive(true);
-                config.setAdminBypassUntil(0L); // Activar protección inmediatamente
+                String sUrl = inputServerUrl != null ? inputServerUrl.getText().toString().trim() : "";
+                String dId = inputDeviceId != null ? inputDeviceId.getText().toString().trim() : "";
 
-                // Start background monitor service
-                Intent serviceIntent = new Intent(MainActivity.this, UsageMonitorService.class);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(serviceIntent);
-                } else {
-                    startService(serviceIntent);
+                if (TextUtils.isEmpty(dId)) {
+                    new AlertDialog.Builder(MainActivity.this)
+                            .setTitle("Código de Dispositivo Requerido")
+                            .setMessage("Para vincular el teléfono, escanea el código QR que se muestra en el panel de padres en tu PC o ingresa un código de dispositivo válido.")
+                            .setPositiveButton("Escanear QR Ahora", (dialog, which) -> {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                                        checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                                    requestPermissions(new String[]{Manifest.permission.CAMERA}, 102);
+                                    return;
+                                }
+                                ScanOptions options = new ScanOptions();
+                                options.setPrompt("Apunta la cámara al código QR en el panel web");
+                                options.setBeepEnabled(true);
+                                options.setOrientationLocked(false);
+                                barcodeLauncher.launch(options);
+                            })
+                            .setNegativeButton("Cancelar", null)
+                            .show();
+                    return;
                 }
 
-                Toast.makeText(MainActivity.this, "¡Protección KidsShield iniciada correctamente!", Toast.LENGTH_LONG).show();
-                finish();
-            }
-        });
-
-        // Uninstall App with Parent PIN Protection
-        if (btnUninstallApp != null) {
-            btnUninstallApp.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
-                    builder.setTitle("Desinstalar KidsShield");
-                    builder.setMessage("Ingresa el PIN de seguridad de padres para autorizar la desinstalación:");
-
-                    final EditText inputPin = new EditText(MainActivity.this);
-                    inputPin.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
-                    inputPin.setHint("••••");
-                    builder.setView(inputPin);
-
-                    builder.setPositiveButton("Desinstalar", (dialog, which) -> {
-                        String enteredPin = inputPin.getText().toString().trim();
-                        ParentalConfig cfg = ParentalConfig.getInstance(MainActivity.this);
-                        if (enteredPin.equals(cfg.getParentPin())) {
-                            SyncClient.sendEvent(MainActivity.this, "APP_UNINSTALLED_BY_PARENT", getPackageName(), "KidsShield",
-                                    "🔓 Desinstalación autorizada por el padre mediante PIN correcto.");
-                            try {
-                                devicePolicyManager.removeActiveAdmin(adminComponent);
-                            } catch (Exception ignored) {}
-                            stopService(new Intent(MainActivity.this, UsageMonitorService.class));
-                            Intent uninstallIntent = new Intent(Intent.ACTION_DELETE);
-                            uninstallIntent.setData(Uri.parse("package:" + getPackageName()));
-                            startActivity(uninstallIntent);
-                            finish();
-                        } else {
-                            Toast.makeText(MainActivity.this, "⛔ PIN Incorrecto. Desinstalación denegada.", Toast.LENGTH_LONG).show();
-                        }
-                    });
-
-                    builder.setNegativeButton("Cancelar", null);
-                    builder.show();
+                if (!TextUtils.isEmpty(sUrl)) {
+                    config.setServerUrl(sUrl);
                 }
+                config.setDeviceId(dId);
+                startProtectionService();
             });
         }
-    }
 
-    private boolean hasUsageStatsPermission() {
-        AppOpsManager appOps = (AppOpsManager) getSystemService(Context.APP_OPS_SERVICE);
-        if (appOps == null) return false;
-        int mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
-                android.os.Process.myUid(), getPackageName());
-        return mode == AppOpsManager.MODE_ALLOWED;
-    }
-
-    private boolean isAccessibilityServiceEnabled() {
-        String expectedService = getPackageName() + "/" + AppBlockerAccessibilityService.class.getName();
-        String enabledServices = Settings.Secure.getString(getContentResolver(),
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-
-        if (enabledServices == null) return false;
-
-        TextUtils.SimpleStringSplitter colonSplitter = new TextUtils.SimpleStringSplitter(':');
-        colonSplitter.setString(enabledServices);
-
-        while (colonSplitter.hasNext()) {
-            String service = colonSplitter.next();
-            if (service.equalsIgnoreCase(expectedService) || service.contains(AppBlockerAccessibilityService.class.getSimpleName())) {
-                return true;
-            }
+        // Uninstall button
+        if (btnUninstallApp != null) {
+            btnUninstallApp.setOnClickListener(v -> showParentPinDialog(() -> {
+                try {
+                    devicePolicyManager.removeActiveAdmin(adminComponent);
+                } catch (Exception ignored) {}
+                stopService(new Intent(this, UsageMonitorService.class));
+                Intent uninstallIntent = new Intent(Intent.ACTION_DELETE);
+                uninstallIntent.setData(Uri.parse("package:" + getPackageName()));
+                startActivity(uninstallIntent);
+                finish();
+            }));
         }
-        return false;
+
+        // Kid Dashboard: Parent Settings Button
+        if (btnParentSettings != null) {
+            btnParentSettings.setOnClickListener(v -> showParentSettingsMenu());
+        }
+
+        // Kid Dashboard: Sync Now Button
+        if (btnKidSyncNow != null) {
+            btnKidSyncNow.setOnClickListener(v -> {
+                Toast.makeText(MainActivity.this, "🔄 Sincronizando con el servidor...", Toast.LENGTH_SHORT).show();
+                SyncClient.sendReport(MainActivity.this, 100, 0, getPackageName(), null, new SyncClient.SyncCallback() {
+                    @Override
+                    public void onSuccess() {
+                        runOnUiThread(() -> {
+                            Toast.makeText(MainActivity.this, "✅ Sincronizado correctamente", Toast.LENGTH_SHORT).show();
+                            updateKidDashboardData();
+                        });
+                    }
+
+                    @Override
+                    public void onError(String error) {
+                        runOnUiThread(() -> Toast.makeText(MainActivity.this, "⚠️ Servidor no alcanzable en este momento", Toast.LENGTH_SHORT).show());
+                    }
+                });
+            });
+        }
     }
 }

@@ -3,379 +3,593 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#0A0D14"
-    android:padding="20dp">
+    android:fillViewport="true">
 
-    <LinearLayout
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:padding="16dp">
 
-        <!-- Header -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="🛡️ KidsShield"
-            android:textColor="#FFFFFF"
-            android:textSize="26sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Configuración Inicial del Dispositivo del Hijo"
-            android:textColor="#94A3B8"
-            android:textSize="14sp" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginVertical="16dp"
-            android:background="@drawable/bg_edittext" />
-
-        <!-- Permissions Title & Assistant Header -->
+        <!-- ============================================================ -->
+        <!-- ESTADO 1: ASISTENTE DE VINCULACIÓN Y PERMISOS (SETUP WIZARD) -->
+        <!-- ============================================================ -->
         <LinearLayout
-            android:id="@+id/cardPermissionsSummary"
+            android:id="@+id/layoutSetupWizard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#1E1B4B"
             android:orientation="vertical"
-            android:padding="16dp"
-            android:layout_marginBottom="12dp">
+            android:visibility="visible">
+
+            <!-- Encabezado Principal -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="🛡️ KidsShield"
+                    android:textColor="#FFFFFF"
+                    android:textSize="24sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvSetupBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_status_pill"
+                    android:text="Asistente de Inicio"
+                    android:textColor="#34D399"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
 
             <TextView
-                android:id="@+id/tvPermissionsSummaryTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="🛡️ Asistente de Configuración de Permisos"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"
-                android:textStyle="bold" />
+                android:text="Configura este dispositivo para sincronizarlo con el panel de tus padres."
+                android:textColor="#94A3B8"
+                android:textSize="13sp"
+                android:layout_marginBottom="16dp" />
 
-            <TextView
-                android:id="@+id/tvPermissionsSummaryCount"
-                android:layout_width="wrap_content"
+            <!-- Tarjeta Hero: Vinculación Rápida con QR -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_hero_card"
+                android:orientation="vertical"
+                android:padding="18dp"
+                android:layout_marginBottom="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📷 Paso Principal: Vinculación con Código QR"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Abre el panel web en tu computadora, haz clic en '🔗 Vincular QR' o '➕ Dispositivo' y escanea la pantalla con la cámara."
+                    android:textColor="#CBD5E1"
+                    android:textSize="13sp"
+                    android:lineSpacingExtra="2dp" />
+
+                <Button
+                    android:id="@+id/btnScanQrPairing"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="14dp"
+                    android:backgroundTint="#6366F1"
+                    android:text="📷 Escanear Código QR de Padres"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Asistente de Permisos: Resumen y Siguiente Permiso -->
+            <LinearLayout
+                android:id="@+id/cardPermissionsSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_card_dark"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="14dp">
+
+                <TextView
+                    android:id="@+id/tvPermissionsSummaryTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🛡️ Permisos de Protección del Sistema"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvPermissionsSummaryCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Verificando permisos necesarios..."
+                    android:textColor="#A5B4FC"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/btnGrantNextMissingPermission"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="12dp"
+                    android:backgroundTint="#4F46E5"
+                    android:text="🚀 Otorgar Siguiente Permiso Pendiente"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Lista Individual de Permisos -->
+            <LinearLayout
+                android:id="@+id/cardPermUsage"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="Verificando permisos del sistema..."
-                android:textColor="#A5B4FC"
+                android:background="@drawable/bg_card_dark"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1. Acceso a Datos de Uso"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Contabiliza minutos usados en juegos y redes."
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnGrantUsageAccess"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="6dp"
+                    android:backgroundTint="#6366F1"
+                    android:text="Conceder Acceso a Uso"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardPermA11y"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_card_dark"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="2. Servicio de Accesibilidad"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Permite bloquear aplicaciones prohibidas y supervisar pantalla."
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnGrantAccessibility"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="6dp"
+                    android:backgroundTint="#6366F1"
+                    android:text="Activar Accesibilidad"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardPermOverlay"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_card_dark"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="3. Mostrar sobre otras Aplicaciones"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Despliega la pantalla de bloqueo cuando el tiempo se agota."
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnGrantOverlay"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="6dp"
+                    android:backgroundTint="#6366F1"
+                    android:text="Permitir Superposición"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardPermLocation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_card_dark"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="4. Permiso de Ubicación GPS"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Ubicación precisa en el mapa para seguridad familiar."
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnGrantLocation"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="6dp"
+                    android:backgroundTint="#6366F1"
+                    android:text="Conceder Ubicación"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardPermAdmin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_card_dark"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="5. Administrador de Dispositivo"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Protege contra desinstalación sin autorización de los padres."
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnGrantDeviceAdmin"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="6dp"
+                    android:backgroundTint="#6366F1"
+                    android:text="Activar Administrador"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardPermBattery"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_card_dark"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="6. Optimización de Batería"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Evita que Android cierre KidsShield en segundo plano."
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnGrantBatteryOpt"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="6dp"
+                    android:backgroundTint="#6366F1"
+                    android:text="Desactivar Optimización"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- Sección Opcional: Configuración Manual (Colapsable o secundaria) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:text="Configuración Manual (Alternativa al QR):"
+                android:textColor="#64748B"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/inputServerUrl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_edittext"
+                android:hint="URL del Servidor (ej: http://100.74.204.90:3000)"
+                android:padding="12dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#64748B"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/inputDeviceId"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_edittext"
+                android:hint="Código del Dispositivo (Escanea el QR para asignar)"
+                android:padding="12dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#64748B"
                 android:textSize="13sp" />
 
             <Button
-                android:id="@+id/btnGrantNextMissingPermission"
+                android:id="@+id/btnStartProtection"
                 android:layout_width="match_parent"
                 android:layout_height="52dp"
-                android:layout_marginTop="12dp"
-                android:backgroundTint="#4F46E5"
-                android:text="🚀 Otorgar Siguiente Permiso Faltante"
+                android:layout_marginTop="14dp"
+                android:backgroundTint="#10B981"
+                android:text="✓ Iniciar Monitoreo y Protección"
                 android:textColor="#FFFFFF"
                 android:textSize="14sp"
                 android:textStyle="bold" />
-        </LinearLayout>
 
-        <!-- Step 1: Usage Access -->
-        <LinearLayout
-            android:id="@+id/cardPermUsage"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/bg_card_dark"
-            android:orientation="vertical"
-            android:padding="14dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="1. Acceso a Datos de Uso"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Permite contabilizar los minutos de uso en redes sociales, juegos y apps."
-                android:textColor="#94A3B8"
+            <!-- Botón Desinstalación (Solo con PIN) -->
+            <Button
+                android:id="@+id/btnUninstallApp"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="24dp"
+                android:backgroundTint="#7F1D1D"
+                android:text="🗑️ Desinstalar Aplicación (Requiere PIN)"
+                android:textColor="#FCA5A5"
                 android:textSize="12sp" />
 
-            <Button
-                android:id="@+id/btnGrantUsageAccess"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:backgroundTint="#6366F1"
-                android:text="Conceder Acceso a Uso"
-                android:textColor="#FFFFFF" />
         </LinearLayout>
 
-        <!-- Step 2: Accessibility Service -->
+        <!-- ============================================================ -->
+        <!-- ESTADO 2: DASHBOARD AMIGABLE DEL MENOR (KID DASHBOARD)      -->
+        <!-- ============================================================ -->
         <LinearLayout
-            android:id="@+id/cardPermA11y"
+            android:id="@+id/layoutKidDashboard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/bg_card_dark"
             android:orientation="vertical"
-            android:padding="14dp">
+            android:visibility="gone">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="2. Servicio de Accesibilidad"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Permite detectar al instante aperturas de apps bloqueadas y proteger el GPS."
-                android:textColor="#94A3B8"
-                android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/btnGrantAccessibility"
+            <!-- Barra Superior con Ajustes de Padres -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:backgroundTint="#6366F1"
-                android:text="Activar Accesibilidad"
-                android:textColor="#FFFFFF" />
-        </LinearLayout>
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="16dp">
 
-        <!-- Step 3: Overlay Permission -->
-        <LinearLayout
-            android:id="@+id/cardPermOverlay"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/bg_card_dark"
-            android:orientation="vertical"
-            android:padding="14dp">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="🛡️ KidsShield"
+                    android:textColor="#FFFFFF"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="3. Superposición de Pantalla"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp"
-                android:textStyle="bold" />
+                <Button
+                    android:id="@+id/btnParentSettings"
+                    android:layout_width="wrap_content"
+                    android:layout_height="38dp"
+                    android:backgroundTint="#1E293B"
+                    android:text="⚙️ Ajustes de Padres"
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp" />
+            </LinearLayout>
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Muestra la pantalla de bloqueo cuando se agota el tiempo permitido."
-                android:textColor="#94A3B8"
-                android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/btnGrantOverlay"
+            <!-- Tarjeta Central: Escudo Activo -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:backgroundTint="#6366F1"
-                android:text="Habilitar Superposición"
-                android:textColor="#FFFFFF" />
-        </LinearLayout>
+                android:background="@drawable/bg_hero_card"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:padding="24dp"
+                android:layout_marginBottom="16dp">
 
-        <!-- Step 4: GPS Location Permission -->
-        <LinearLayout
-            android:id="@+id/cardPermGps"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/bg_card_dark"
-            android:orientation="vertical"
-            android:padding="14dp">
+                <TextView
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:background="@drawable/bg_shield_circle"
+                    android:gravity="center"
+                    android:text="🛡️"
+                    android:textSize="36sp" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="4. Ubicación GPS Satelital Ininterrumpible"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp"
-                android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/tvKidGreeting"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="👋 ¡Hola Seba!"
+                    android:textColor="#FFFFFF"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Rastrea la posición en vivo las 24 horas y previene que el menor apague el GPS."
-                android:textColor="#94A3B8"
-                android:textSize="12sp" />
+                <TextView
+                    android:id="@+id/tvKidStatusPill"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/bg_status_pill"
+                    android:text="🟢 Tu teléfono está protegido"
+                    android:textColor="#34D399"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
 
-            <Button
-                android:id="@+id/btnGrantLocation"
+                <TextView
+                    android:id="@+id/tvKidStatusSub"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="KidsShield cuida tu bienestar digital, horarios y seguridad."
+                    android:textColor="#CBD5E1"
+                    android:textSize="13sp"
+                    android:textAlignment="center" />
+            </LinearLayout>
+
+            <!-- Tarjeta de Tiempo de Pantalla -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:backgroundTint="#6366F1"
-                android:text="Activar Ubicación GPS Continua"
-                android:textColor="#FFFFFF" />
-        </LinearLayout>
+                android:background="@drawable/bg_card_dark"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="14dp">
 
-        <!-- Step 5: Device Admin -->
-        <LinearLayout
-            android:id="@+id/cardPermAdmin"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/bg_card_dark"
-            android:orientation="vertical"
-            android:padding="14dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="5. Administrador de Dispositivo (Anti-Desinstalación)"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp"
-                android:textStyle="bold" />
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="⏳ Tiempo de Pantalla Hoy"
+                        android:textColor="#FFFFFF"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Evita que el menor desinstale la aplicación desde Ajustes de Android."
-                android:textColor="#94A3B8"
-                android:textSize="12sp" />
+                    <TextView
+                        android:id="@+id/tvKidScreenTimeRemaining"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="120 min restantes"
+                        android:textColor="#38BDF8"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
 
-            <Button
-                android:id="@+id/btnGrantDeviceAdmin"
+                <ProgressBar
+                    android:id="@+id/pbKidScreenTime"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="8dp"
+                    android:layout_marginTop="12dp"
+                    android:max="100"
+                    android:progress="25"
+                    android:progressTint="#6366F1" />
+
+                <TextView
+                    android:id="@+id/tvKidScreenTime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="30 min usados de 120 min permitidos"
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- Tarjeta de Horario de Descanso -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:backgroundTint="#6366F1"
-                android:text="Activar Administrador"
-                android:textColor="#FFFFFF" />
-        </LinearLayout>
+                android:background="@drawable/bg_card_dark"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="20dp">
 
-        <!-- Step 6: Battery Optimization & Background Execution -->
-        <LinearLayout
-            android:id="@+id/cardPermBattery"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/bg_card_dark"
-            android:orientation="vertical"
-            android:padding="14dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🌙 Horario de Descanso"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="6. Sin Restricción de Batería (Segundo Plano)"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp"
-                android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/tvKidBedtimeStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Hora de dormir programada de 21:30 a 07:00."
+                    android:textColor="#94A3B8"
+                    android:textSize="13sp" />
+            </LinearLayout>
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Evita que el sistema operativo cierre KidsShield para ahorrar batería."
-                android:textColor="#94A3B8"
-                android:textSize="12sp" />
-
+            <!-- Botón de Sincronización Manual -->
             <Button
-                android:id="@+id/btnGrantBatteryOpt"
+                android:id="@+id/btnKidSyncNow"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:backgroundTint="#6366F1"
-                android:text="Permitir Ejecución Permanente"
-                android:textColor="#FFFFFF" />
+                android:layout_height="48dp"
+                android:layout_marginBottom="30dp"
+                android:backgroundTint="#1E293B"
+                android:text="🔄 Sincronizar Estado con el Panel"
+                android:textColor="#94A3B8"
+                android:textSize="13sp" />
+
         </LinearLayout>
 
-        <!-- Pairing Section -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginVertical="16dp"
-            android:background="@drawable/bg_edittext" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Vinculación con Panel de Padres"
-            android:textColor="#FFFFFF"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/btnScanQrPairing"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="10dp"
-            android:backgroundTint="#6366F1"
-            android:text="📷 Escanear Código QR de Vinculación"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="O ingresa manualmente los datos del servidor:"
-            android:textColor="#64748B"
-            android:textSize="12sp" />
-
-        <EditText
-            android:id="@+id/inputServerUrl"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:background="@drawable/bg_edittext"
-            android:hint="URL del Servidor (ej: http://100.74.204.90:3000)"
-            android:padding="12dp"
-            android:text="http://100.74.204.90:3000"
-            android:textColor="#FFFFFF"
-            android:textColorHint="#64748B"
-            android:textSize="14sp" />
-
-        <EditText
-            android:id="@+id/inputDeviceId"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/bg_edittext"
-            android:hint="Código del Dispositivo"
-            android:padding="12dp"
-            android:text="KID-PHONE-01"
-            android:textColor="#FFFFFF"
-            android:textColorHint="#64748B"
-            android:textSize="14sp" />
-
-        <Button
-            android:id="@+id/btnStartProtection"
-            android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:layout_marginTop="16dp"
-            android:backgroundTint="#10B981"
-            android:text="✓ Iniciar Monitoreo y Protección"
-            android:textColor="#FFFFFF"
-            android:textSize="15sp"
-            android:textStyle="bold" />
-
-        <!-- Administration / Uninstallation Protection -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginVertical="16dp"
-            android:background="@drawable/bg_edittext" />
-
-        <Button
-            android:id="@+id/btnUninstallApp"
-            android:layout_width="match_parent"
-            android:layout_height="46dp"
-            android:layout_marginBottom="30dp"
-            android:backgroundTint="#7F1D1D"
-            android:text="🗑️ Desinstalar Aplicación (Requiere PIN)"
-            android:textColor="#FCA5A5"
-            android:textSize="13sp" />
-
-    </LinearLayout>
+    </FrameLayout>
 </ScrollView>

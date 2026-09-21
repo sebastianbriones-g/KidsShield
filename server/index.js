@@ -63,6 +63,10 @@ function createDefaultDevice(id, name, childName, avatar = '📱', deviceType = 
     location: null,
     gpsTrackingEnabled: true,
     gpsIntervalSeconds: 30,
+    textMonitoringEnabled: true,
+    screenshotMonitoringEnabled: true,
+    videoMonitoringEnabled: true,
+    audioMonitoringEnabled: true,
     blockedApps: [],
     appCatalog: [],
     activityLog: []
@@ -147,17 +151,24 @@ app.use('/api/devices', createDeviceRouter({
 }));
 app.use('/api/reports', createReportRouter({ devices }));
 
-// Heartbeat Watchdog: Detecta dispositivos desconectados por timeout (> 60s sin telemetría)
-const HEARTBEAT_TIMEOUT_MS = 60000;
+// Heartbeat Watchdog: Detecta dispositivos desconectados de forma inteligente
+// En reposo (pantalla apagada): timeout de 10 min. En uso activo: timeout de 3 min.
+const TIMEOUT_ACTIVE_MS = 180000;   // 3 minutos
+const TIMEOUT_STANDBY_MS = 600000;  // 10 minutos
+
 setInterval(async () => {
   const now = Date.now();
   for (const deviceId of Object.keys(devices)) {
     const device = devices[deviceId];
     if (device && device.isOnline) {
       const lastSeenTime = device.lastSeen ? new Date(device.lastSeen).getTime() : 0;
-      if (lastSeenTime > 0 && (now - lastSeenTime) > HEARTBEAT_TIMEOUT_MS) {
+      const isStandby = device.currentActiveAppName === 'Pantalla en reposo / Apagada';
+      const effectiveTimeout = isStandby ? TIMEOUT_STANDBY_MS : TIMEOUT_ACTIVE_MS;
+
+      if (lastSeenTime > 0 && (now - lastSeenTime) > effectiveTimeout) {
         device.isOnline = false;
-        console.log(`[Watchdog] ⚠️ Conexión perdida con ${device.id} (${device.name}). Último reporte hace ${Math.round((now - lastSeenTime) / 1000)}s.`);
+        const diffSec = Math.round((now - lastSeenTime) / 1000);
+        console.log(`[Watchdog] ⚠️ Conexión perdida con ${device.id} (${device.name}). Último reporte hace ${diffSec}s.`);
 
         try {
           await db.client.execute({
@@ -169,18 +180,20 @@ setInterval(async () => {
         }
 
         const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-        const alertMsg = `⚠️ Se perdió la conexión con el dispositivo ${device.name}. Posible apagado, sin señal o desinstalación de la app.`;
+        const alertMsg = isStandby
+          ? `ℹ️ El dispositivo ${device.name} se encuentra en reposo prolongado o fuera de cobertura.`
+          : `⚠️ Se perdió la conexión con el dispositivo ${device.name}. Posible apagado, sin señal o desinstalación de la app.`;
 
         device.activityLog = device.activityLog || [];
         device.activityLog.unshift({
           time: timeStr,
-          type: 'alert',
+          type: isStandby ? 'info' : 'alert',
           message: alertMsg,
           timestamp: now
         });
 
         const famId = device.familyId || 'FAM-DEFAULT-01';
-        db.logActivity(device.id, timeStr, 'alert', alertMsg, famId).catch(() => {});
+        db.logActivity(device.id, timeStr, isStandby ? 'info' : 'alert', alertMsg, famId).catch(() => {});
 
         socketManager.broadcastToFamily(famId, 'DEVICE_STATUS_CHANGED', {
           id: device.id,
@@ -193,13 +206,15 @@ setInterval(async () => {
 
         socketManager.broadcastToFamily(famId, 'DEVICE_UPDATED', device);
 
-        socketManager.broadcastToFamily(famId, 'PUSH_NOTIFICATION', {
-          id: device.id,
-          title: `KidsShield: ${device.name}`,
-          body: alertMsg,
-          type: 'alert',
-          time: timeStr
-        });
+        if (!isStandby) {
+          socketManager.broadcastToFamily(famId, 'PUSH_NOTIFICATION', {
+            id: device.id,
+            title: `KidsShield: ${device.name}`,
+            body: alertMsg,
+            type: 'alert',
+            time: timeStr
+          });
+        }
       }
     }
   }

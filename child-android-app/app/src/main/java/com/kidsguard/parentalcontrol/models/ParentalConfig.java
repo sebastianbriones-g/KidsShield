@@ -28,11 +28,24 @@ public class ParentalConfig {
     }
 
     public String getDeviceId() {
-        return prefs.getString("device_id", "KID-PHONE-01");
+        return prefs.getString("device_id", "");
     }
 
     public void setDeviceId(String id) {
-        prefs.edit().putString("device_id", id).apply();
+        prefs.edit().putString("device_id", id != null ? id.trim() : "").apply();
+    }
+
+    public boolean isDeviceLinked() {
+        String id = getDeviceId();
+        return id != null && !id.trim().isEmpty();
+    }
+
+    public String getChildName() {
+        return prefs.getString("child_name", "Mi Dispositivo");
+    }
+
+    public void setChildName(String name) {
+        prefs.edit().putString("child_name", name != null ? name.trim() : "").apply();
     }
 
     public String getServerUrl() {
@@ -254,8 +267,41 @@ public class ParentalConfig {
         prefs.edit().putBoolean("auto_screenshot_enabled", enabled).apply();
     }
 
+    public boolean isTextMonitoringEnabled() {
+        return prefs.getBoolean("text_monitoring_enabled", true);
+    }
+
+    public void setTextMonitoringEnabled(boolean enabled) {
+        prefs.edit().putBoolean("text_monitoring_enabled", enabled).apply();
+    }
+
+    public boolean isScreenshotMonitoringEnabled() {
+        return prefs.getBoolean("screenshot_monitoring_enabled", true);
+    }
+
+    public void setScreenshotMonitoringEnabled(boolean enabled) {
+        prefs.edit().putBoolean("screenshot_monitoring_enabled", enabled).apply();
+    }
+
+    public boolean isVideoMonitoringEnabled() {
+        return prefs.getBoolean("video_monitoring_enabled", true);
+    }
+
+    public void setVideoMonitoringEnabled(boolean enabled) {
+        prefs.edit().putBoolean("video_monitoring_enabled", enabled).apply();
+    }
+
+    public boolean isAudioMonitoringEnabled() {
+        return prefs.getBoolean("audio_monitoring_enabled", true);
+    }
+
+    public void setAudioMonitoringEnabled(boolean enabled) {
+        prefs.edit().putBoolean("audio_monitoring_enabled", enabled).apply();
+    }
+
     public void releaseAndUnlink() {
         prefs.edit()
+            .putString("device_id", "")
             .putBoolean("is_locked", false)
             .putString("lock_reason", "")
             .putBoolean("protection_active", false)

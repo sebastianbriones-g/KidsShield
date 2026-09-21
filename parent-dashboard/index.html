@@ -717,7 +717,7 @@
               <div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <h2 class="panel-title">Visualizador de Pantalla en Vivo</h2>
-                  <span class="badge badge-accent" id="liveStatusBadge">🟢 En Vivo</span>
+                  <span class="badge" id="liveStatusBadge" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8;">⚪ Desconectado</span>
                 </div>
                 <p class="panel-subtitle">Supervisión en tiempo real de la pantalla del menor</p>
               </div>
@@ -1373,17 +1373,10 @@
                   <h3 style="color: #fff; font-size: 1.05rem; margin: 0;">Rastreo y Ubicación GPS</h3>
                 </div>
                 <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 14px;">
-                  Controla si el dispositivo debe transmitir su posición satelital y con qué frecuencia de refresco.
+                  Define la frecuencia con la que el teléfono transmitirá sus coordenadas satelitales al servidor cuando el GPS esté activo.
                 </p>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-                  <span style="font-size: 0.88rem; color: #fff; font-weight: 500;">Permitir Rastreo GPS:</span>
-                  <label style="display: inline-flex; align-items: center; cursor: pointer;">
-                    <input type="checkbox" id="settingsToggleGps" checked style="accent-color: #10b981; width: 18px; height: 18px; cursor: pointer;">
-                    <span id="settingsToggleGpsText" style="font-size: 0.84rem; color: #34d399; margin-left: 8px; font-weight: 600;">Activado</span>
-                  </label>
-                </div>
                 <div class="input-group-custom" style="margin-bottom: 14px;">
-                  <label for="settingsGpsInterval" style="font-size: 0.84rem;">Tiempo de actualización de ubicación:</label>
+                  <label for="settingsGpsInterval" style="font-size: 0.84rem;">Frecuencia de actualización de ubicación:</label>
                   <select id="settingsGpsInterval" class="device-select-custom" style="width: 100%;">
                     <option value="30" selected>Cada 30 segundos (Recomendado)</option>
                     <option value="60">Cada 1 minuto (Equilibrado)</option>
@@ -1391,7 +1384,7 @@
                     <option value="600">Cada 10 minutos (Máximo ahorro)</option>
                   </select>
                 </div>
-                <button class="btn btn-secondary btn-sm" id="btnSaveGpsSettings" style="width: 100%;">Guardar Ajustes GPS</button>
+                <button class="btn btn-secondary btn-sm" id="btnSaveGpsSettings" style="width: 100%;">Guardar Frecuencia GPS</button>
               </div>
 
               <!-- 2. Límite Diario de Tiempo de Pantalla -->
@@ -1501,6 +1494,132 @@
                   </label>
                 </div>
                 <button type="button" class="btn btn-secondary btn-sm" id="btnTestNotificationSound" style="width: 100%;">🔊 Probar Sonido de Alerta</button>
+              </div>
+
+              <!-- 7. Módulos de Detección y Supervisión Remota -->
+              <div class="settings-card-box" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 18px; grid-column: 1 / -1;">
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 10px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.4rem;">🛡️</span>
+                    <div>
+                      <h3 style="color: #fff; font-size: 1.1rem; margin: 0; font-weight: 700;">Módulos de Detección y Supervisión</h3>
+                      <p style="font-size: 0.8rem; color: var(--text-muted); margin: 2px 0 0 0;">
+                        Activa o desactiva de forma granular la captura de texto, pantalla, video y audio ambiental en este teléfono.
+                      </p>
+                    </div>
+                  </div>
+                  <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); font-size: 0.76rem; font-weight: 700; padding: 4px 10px;">
+                    Privacidad y Control Parental
+                  </span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 16px;">
+                  <!-- Item 1: Rastreo y Ubicación GPS -->
+                  <div style="background: rgba(15,23,42,0.6); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; justify-content: space-between; gap: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                      <div>
+                        <div style="font-size: 0.9rem; color: #fff; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                          <span>📍</span> Rastreo y Ubicación GPS
+                        </div>
+                        <p style="font-size: 0.76rem; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.35;">
+                          Permite que el dispositivo transmita su posición geográfica para verla en el mapa satelital y geocercas.
+                        </p>
+                      </div>
+                      <label style="display: inline-flex; align-items: center; cursor: pointer; flex-shrink: 0;">
+                        <input type="checkbox" id="settingsToggleGps" checked style="accent-color: #10b981; width: 18px; height: 18px; cursor: pointer;">
+                      </label>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end;">
+                      <span id="settingsToggleGpsText" style="font-size: 0.8rem; color: #34d399; font-weight: 700;">Activado</span>
+                    </div>
+                  </div>
+
+                  <!-- Item 2: Detección de Texto -->
+                  <div style="background: rgba(15,23,42,0.6); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; justify-content: space-between; gap: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                      <div>
+                        <div style="font-size: 0.9rem; color: #fff; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                          <span>⌨️</span> Detección de Texto (Teclado)
+                        </div>
+                        <p style="font-size: 0.76rem; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.35;">
+                          Registra pulsaciones, mensajes y búsquedas web del menor en aplicaciones compatibles.
+                        </p>
+                      </div>
+                      <label style="display: inline-flex; align-items: center; cursor: pointer; flex-shrink: 0;">
+                        <input type="checkbox" id="settingsToggleTextDetection" checked style="accent-color: #10b981; width: 18px; height: 18px; cursor: pointer;">
+                      </label>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end;">
+                      <span id="settingsToggleTextDetectionText" style="font-size: 0.8rem; color: #34d399; font-weight: 700;">Activado</span>
+                    </div>
+                  </div>
+
+                  <!-- Item 2: Captura de Pantalla -->
+                  <div style="background: rgba(15,23,42,0.6); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; justify-content: space-between; gap: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                      <div>
+                        <div style="font-size: 0.9rem; color: #fff; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                          <span>📸</span> Capturas de Pantalla
+                        </div>
+                        <p style="font-size: 0.76rem; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.35;">
+                          Habilita la solicitud de capturas instantáneas y capturas automáticas de pantalla.
+                        </p>
+                      </div>
+                      <label style="display: inline-flex; align-items: center; cursor: pointer; flex-shrink: 0;">
+                        <input type="checkbox" id="settingsToggleScreenshotDetection" checked style="accent-color: #10b981; width: 18px; height: 18px; cursor: pointer;">
+                      </label>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end;">
+                      <span id="settingsToggleScreenshotDetectionText" style="font-size: 0.8rem; color: #34d399; font-weight: 700;">Activado</span>
+                    </div>
+                  </div>
+
+                  <!-- Item 3: Detección y Grabación de Video -->
+                  <div style="background: rgba(15,23,42,0.6); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; justify-content: space-between; gap: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                      <div>
+                        <div style="font-size: 0.9rem; color: #fff; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                          <span>🎥</span> Supervisión de Video
+                        </div>
+                        <p style="font-size: 0.76rem; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.35;">
+                          Permite solicitar secuencias breves de video en vivo para ver la actividad en directo.
+                        </p>
+                      </div>
+                      <label style="display: inline-flex; align-items: center; cursor: pointer; flex-shrink: 0;">
+                        <input type="checkbox" id="settingsToggleVideoDetection" checked style="accent-color: #10b981; width: 18px; height: 18px; cursor: pointer;">
+                      </label>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end;">
+                      <span id="settingsToggleVideoDetectionText" style="font-size: 0.8rem; color: #34d399; font-weight: 700;">Activado</span>
+                    </div>
+                  </div>
+
+                  <!-- Item 4: Detección y Grabación de Audio -->
+                  <div style="background: rgba(15,23,42,0.6); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; justify-content: space-between; gap: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                      <div>
+                        <div style="font-size: 0.9rem; color: #fff; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                          <span>🎙️</span> Detección de Audio Ambiental
+                        </div>
+                        <p style="font-size: 0.76rem; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.35;">
+                          Permite grabar y escuchar clips de sonido ambiental a través del micrófono del móvil.
+                        </p>
+                      </div>
+                      <label style="display: inline-flex; align-items: center; cursor: pointer; flex-shrink: 0;">
+                        <input type="checkbox" id="settingsToggleAudioDetection" checked style="accent-color: #10b981; width: 18px; height: 18px; cursor: pointer;">
+                      </label>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end;">
+                      <span id="settingsToggleAudioDetectionText" style="font-size: 0.8rem; color: #34d399; font-weight: 700;">Activado</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end;">
+                  <button class="btn btn-primary btn-sm" id="btnSaveDetectionSettings" style="font-weight: 700; padding: 8px 20px;">
+                    💾 Guardar Módulos de Detección
+                  </button>
+                </div>
               </div>
 
             </div>

@@ -302,6 +302,15 @@ module.exports = function createDeviceRouter({
     if (typeof req.body.audioClipDurationSeconds === 'number') device.audioClipDurationSeconds = req.body.audioClipDurationSeconds;
     if (typeof req.body.videoClipDurationSeconds === 'number') device.videoClipDurationSeconds = req.body.videoClipDurationSeconds;
 
+    // Banderas de módulos de detección y supervisión
+    if (typeof req.body.textMonitoringEnabled === 'boolean') device.textMonitoringEnabled = req.body.textMonitoringEnabled;
+    if (typeof req.body.screenshotMonitoringEnabled === 'boolean') {
+      device.screenshotMonitoringEnabled = req.body.screenshotMonitoringEnabled;
+      if (!req.body.screenshotMonitoringEnabled) device.autoScreenshotEnabled = false;
+    }
+    if (typeof req.body.videoMonitoringEnabled === 'boolean') device.videoMonitoringEnabled = req.body.videoMonitoringEnabled;
+    if (typeof req.body.audioMonitoringEnabled === 'boolean') device.audioMonitoringEnabled = req.body.audioMonitoringEnabled;
+
     if (Array.isArray(blockedApps)) {
       device.blockedApps = blockedApps;
       device.appCatalog.forEach(app => {
@@ -417,6 +426,10 @@ module.exports = function createDeviceRouter({
     const device = devices[req.params.id];
     if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
 
+    if (device.screenshotMonitoringEnabled === false) {
+      return res.json({ success: true, ignored: true, message: 'Capturas de pantalla desactivadas en configuración' });
+    }
+
     const img = req.body.imageBase64 || req.body.screenshot || req.body.image;
     if (!img) return res.status(400).json({ error: 'Falta imagen' });
 
@@ -450,6 +463,10 @@ module.exports = function createDeviceRouter({
     const device = devices[req.params.id];
     if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
 
+    if (device.screenshotMonitoringEnabled === false) {
+      return res.status(403).json({ error: 'Las capturas de pantalla están desactivadas para este dispositivo en Ajustes' });
+    }
+
     if (!device.pendingCommands) device.pendingCommands = [];
     device.pendingCommands.push('TAKE_SCREENSHOT');
 
@@ -463,6 +480,10 @@ module.exports = function createDeviceRouter({
   router.post('/:id/request-video', (req, res) => {
     const device = devices[req.params.id];
     if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
+
+    if (device.videoMonitoringEnabled === false) {
+      return res.status(403).json({ error: 'La supervisión de video está desactivada para este dispositivo en Ajustes' });
+    }
 
     const sec = req.body.duration || device.videoClipDurationSeconds || 5;
     const command = `TAKE_VIDEO_${sec}S`;
@@ -479,6 +500,10 @@ module.exports = function createDeviceRouter({
   router.post('/:id/video-clip', async (req, res) => {
     const device = devices[req.params.id];
     if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
+
+    if (device.videoMonitoringEnabled === false) {
+      return res.json({ success: true, ignored: true, message: 'Supervisión de video desactivada en configuración' });
+    }
 
     const { frames, durationMs, intervalMs } = req.body;
     if (!Array.isArray(frames) || frames.length === 0) {
@@ -521,6 +546,10 @@ module.exports = function createDeviceRouter({
     const device = devices[req.params.id];
     if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
 
+    if (device.audioMonitoringEnabled === false) {
+      return res.status(403).json({ error: 'La supervisión de audio está desactivada para este dispositivo en Ajustes' });
+    }
+
     const sec = req.body.duration || device.audioClipDurationSeconds || 5;
     const command = `RECORD_AUDIO_${sec}S`;
     if (!device.pendingCommands) device.pendingCommands = [];
@@ -535,6 +564,10 @@ module.exports = function createDeviceRouter({
   router.post('/:id/audio-clip', async (req, res) => {
     const device = devices[req.params.id];
     if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
+
+    if (device.audioMonitoringEnabled === false) {
+      return res.json({ success: true, ignored: true, message: 'Supervisión de audio desactivada en configuración' });
+    }
 
     const rawAudio = req.body.audioBase64 || req.body.audio;
     if (!rawAudio) return res.status(400).json({ error: 'Faltan datos de audio' });
@@ -742,7 +775,46 @@ module.exports = function createDeviceRouter({
     res.json(history);
   });
 
-  // 19. Eventos en tiempo real desde la APK
+  // 18b. Registro de ubicación GPS individual o histórico desde cola offline
+  router.post('/:id/location', async (req, res) => {
+    if (unlinkedDevices.has(req.params.id)) {
+      return res.json({ success: true, unlinked: true });
+    }
+    const device = devices[req.params.id];
+    if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
+
+    const { latitude, longitude, lat, lng, accuracy, address, timestamp, lastUpdated } = req.body;
+    const finalLat = typeof latitude === 'number' ? latitude : lat;
+    const finalLng = typeof longitude === 'number' ? longitude : lng;
+
+    if (typeof finalLat !== 'number' || typeof finalLng !== 'number') {
+      return res.status(400).json({ error: 'Coordenadas inválidas' });
+    }
+
+    const locDate = timestamp ? new Date(timestamp) : (lastUpdated ? new Date(lastUpdated) : new Date());
+    const locObj = {
+      latitude: finalLat,
+      longitude: finalLng,
+      accuracy: accuracy || 15,
+      address: address || 'Ubicación GPS registrada',
+      lastUpdated: locDate.toISOString()
+    };
+
+    const famId = device.familyId || 'FAM-DEFAULT-01';
+    await db.logLocation(device.id, locObj, famId);
+
+    // Si el punto es más reciente que el último registrado, actualizar la posición viva
+    const currentLocTime = device.location && device.location.lastUpdated ? new Date(device.location.lastUpdated).getTime() : 0;
+    if (!device.location || locDate.getTime() >= currentLocTime) {
+      device.location = locObj;
+      device._lastGpsUpdateTime = locDate.getTime();
+      socketManager.broadcastToFamily(famId, 'LOCATION_UPDATED', { id: device.id, location: device.location });
+    }
+
+    res.json({ success: true, logged: true });
+  });
+
+  // 19. Eventos en tiempo real desde la APK (con soporte de cola offline / timestamps históricos)
   router.post('/:id/event', async (req, res) => {
     if (unlinkedDevices.has(req.params.id)) {
       return res.json({ success: true, unlinked: true });
@@ -751,18 +823,24 @@ module.exports = function createDeviceRouter({
     const device = devices[req.params.id];
     if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
 
-    const { type, package: pkg, appName, message } = req.body;
+    const { type, package: pkg, appName, message, timestamp } = req.body;
     if (type !== 'PROTECTION_DISABLED' && type !== 'APP_UNINSTALLED_BY_PARENT') {
       socketManager.markDeviceOnline(device);
     }
-    const timeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const eventTime = timestamp ? new Date(timestamp) : new Date();
+    const timeStr = eventTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
     let eventMessage = message || '';
     let eventType = type || 'info';
 
+    // Determinar si es un evento reciente o histórico offline
+    const isHistorical = timestamp && (Date.now() - timestamp > 15000);
+
     if (type === 'app_open') {
       eventMessage = `Abrió ${appName || pkg}`;
-      device.currentActiveApp = pkg;
-      device.currentActiveAppName = appName || pkg;
+      if (!isHistorical) {
+        device.currentActiveApp = pkg;
+        device.currentActiveAppName = appName || pkg;
+      }
       eventType = 'app_open';
     } else if (type === 'app_close') {
       eventMessage = `Minimizó ${appName || pkg}`;
@@ -804,26 +882,33 @@ module.exports = function createDeviceRouter({
       message: eventMessage,
       package: pkg || '',
       appName: appName || (pkg ? pkg.split('.').pop() : 'KidsShield'),
-      timestamp: Date.now()
+      timestamp: eventTime.getTime()
     };
 
     device.activityLog.unshift(logEntry);
+    device.activityLog.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    if (device.activityLog.length > 200) {
+      device.activityLog = device.activityLog.slice(0, 200);
+    }
+
     const famId = device.familyId || 'FAM-DEFAULT-01';
-    await db.logActivity(device.id, timeStr, eventType, eventMessage, famId);
+    await db.logActivity(device.id, timeStr, eventType, eventMessage, famId, eventTime.toISOString());
 
     socketManager.broadcastToFamily(famId, 'EVENT_RECORDED', { id: device.id, event: logEntry });
-    socketManager.broadcastToFamily(famId, 'PUSH_NOTIFICATION', {
-      id: device.id,
-      title: `KidsShield: ${device.name}`,
-      body: eventMessage,
-      type: eventType,
-      time: timeStr,
-      package: pkg || '',
-      appName: logEntry.appName
-    });
+    if (!isHistorical) {
+      socketManager.broadcastToFamily(famId, 'PUSH_NOTIFICATION', {
+        id: device.id,
+        title: `KidsShield: ${device.name}`,
+        body: eventMessage,
+        type: eventType,
+        time: timeStr,
+        package: pkg || '',
+        appName: logEntry.appName
+      });
+    }
     socketManager.broadcastToFamily(famId, 'DEVICE_UPDATED', device);
 
-    res.json({ success: true });
+    res.json({ success: true, offlineSynced: Boolean(isHistorical) });
   });
 
   // 20. Historial de actividades
@@ -836,7 +921,9 @@ module.exports = function createDeviceRouter({
   router.post('/:id/report', async (req, res) => {
     const deviceId = req.params.id;
 
-    if (unlinkedDevices.has(deviceId)) {
+    if (devices[deviceId]) {
+      unlinkedDevices.delete(deviceId);
+    } else if (unlinkedDevices.has(deviceId)) {
       console.log(`[Devices] 🔓 Dispositivo desvinculado ${deviceId} reportando. Enviando orden de liberación.`);
       return res.json({
         unlinked: true,
@@ -1001,7 +1088,7 @@ module.exports = function createDeviceRouter({
             longitude: lng,
             accuracy: req.body.location.accuracy || 15,
             address: req.body.location.address || 'Ubicación GPS en vivo',
-            lastUpdated: new Date().toISOString()
+            lastUpdated: req.body.location.lastUpdated || (req.body.location.timestamp ? new Date(req.body.location.timestamp).toISOString() : new Date().toISOString())
           };
           await db.logLocation(device.id, device.location);
           const famId = device.familyId || 'FAM-DEFAULT-01';
@@ -1122,6 +1209,10 @@ module.exports = function createDeviceRouter({
       gpsIntervalSeconds: device.gpsIntervalSeconds || 600,
       audioClipDurationSeconds: device.audioClipDurationSeconds || 5,
       videoClipDurationSeconds: device.videoClipDurationSeconds || 5,
+      textMonitoringEnabled: device.textMonitoringEnabled !== false,
+      screenshotMonitoringEnabled: device.screenshotMonitoringEnabled !== false,
+      videoMonitoringEnabled: device.videoMonitoringEnabled !== false,
+      audioMonitoringEnabled: device.audioMonitoringEnabled !== false,
       blockedApps: device.blockedApps,
       appLimits: device.appLimits || {},
       parentPin: device.parentPin,
@@ -1185,6 +1276,10 @@ module.exports = function createDeviceRouter({
   router.post('/:id/keystrokes', (req, res) => {
     const device = devices[req.params.id];
     if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
+
+    if (device.textMonitoringEnabled === false) {
+      return res.json({ success: true, ignored: true, message: 'Detección de texto desactivada en configuración' });
+    }
 
     const { package: pkg, appName, text, timestamp } = req.body;
     if (!text || typeof text !== 'string' || text.trim().length === 0) {
@@ -1306,7 +1401,8 @@ module.exports = function createDeviceRouter({
   // 26. Cambiar categoría de una aplicación instalada
   router.post('/:id/app-category', async (req, res) => {
     const { id } = req.params;
-    const { package: pkg, category } = req.body;
+    const pkg = req.body.package || req.body.packageName;
+    const category = req.body.category;
     const device = devices[id];
     if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
     if (!pkg || !category) return res.status(400).json({ error: 'Paquete y categoría requeridos' });

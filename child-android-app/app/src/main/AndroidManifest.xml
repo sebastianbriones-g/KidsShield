@@ -117,5 +117,15 @@
             </intent-filter>
         </receiver>
 
+        <!-- Network connectivity change receiver for SQLite queue flushing -->
+        <receiver
+            android:name=".receivers.NetworkChangeReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
+            </intent-filter>
+        </receiver>
+
     </application>
 </manifest>

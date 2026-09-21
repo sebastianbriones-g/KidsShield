@@ -123,6 +123,10 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
         return instanceRef != null ? instanceRef.get() : null;
     }
 
+    public static boolean isServiceRunning() {
+        return getInstance() != null;
+    }
+
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
@@ -327,6 +331,9 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
      * Native screen capture via Accessibility Service (available in Android 11 / API 30+)
      */
     public void captureScreenshot() {
+        if (!ParentalConfig.getInstance(this).isScreenshotMonitoringEnabled()) {
+            return;
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             Log.w(TAG, "Captura de pantalla requiere Android 11 o superior.");
             return;
@@ -398,6 +405,9 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
      * Native video clip capture with custom duration (5s, 7s, 10s via Accessibility API)
      */
     public void captureVideoClip(int durationSeconds) {
+        if (!ParentalConfig.getInstance(this).isVideoMonitoringEnabled()) {
+            return;
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             Log.w(TAG, "Grabación de video requiere Android 11+");
             return;
@@ -498,6 +508,9 @@ public class AppBlockerAccessibilityService extends AccessibilityService {
 
     private void handleViewTextChanged(AccessibilityEvent event) {
         if (event == null) return;
+        if (!ParentalConfig.getInstance(this).isTextMonitoringEnabled()) {
+            return;
+        }
 
         // SEGURIDAD ESTRICTA: NUNCA capturar campos de contraseñas ni datos bancarios
         if (event.isPassword()) {

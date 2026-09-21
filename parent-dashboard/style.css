@@ -4008,6 +4008,7 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
   gap: 18px;
+  padding-top: 14px;
 }
 
 .child-overview-card {
@@ -4020,7 +4021,28 @@ body {
   gap: 14px;
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.badge-supervising-now {
+  position: absolute;
+  top: -12px;
+  right: 14px;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
 }
 
 .child-overview-card:hover {

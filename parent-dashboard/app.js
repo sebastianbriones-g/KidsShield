@@ -352,7 +352,13 @@ function renderNoDeviceState() {
   if (batteryStatus) batteryStatus.textContent = '🔋 --%';
   if (lastSeenStatus) lastSeenStatus.textContent = 'Sin dispositivo vinculado';
   if (headerPinDisplay) headerPinDisplay.textContent = '----';
-  if (pairingCodeDisplay) pairingCodeDisplay.textContent = 'KID-PHONE-01';
+  if (pairingCodeDisplay) pairingCodeDisplay.textContent = 'Sin vincular';
+  const liveStatusBadge = document.getElementById('liveStatusBadge');
+  if (liveStatusBadge) {
+    liveStatusBadge.textContent = '⚪ Desconectado';
+    liveStatusBadge.style.background = 'rgba(148, 163, 184, 0.15)';
+    liveStatusBadge.style.color = '#94a3b8';
+  }
 
   if (btnMasterLock) {
     btnMasterLock.classList.remove('is-locked');
@@ -786,7 +792,7 @@ function renderAppList() {
         const res = await apiFetch(`/api/devices/${currentDevice.id}/app-category`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ packageName: app.package, category: newCat })
+          body: JSON.stringify({ package: app.package, packageName: app.package, category: newCat })
         });
         if (res.ok) {
           app.category = newCat;
@@ -915,7 +921,14 @@ function renderSimulator() {
   const isAppLimitExceeded = appLimit > 0 && activeApp && (activeApp.timeTodayMinutes || 0) >= appLimit;
   const isBlockedApp = activeApp && (activeApp.isBlocked || isAppLimitExceeded);
   const liveStatusBadge = document.getElementById('liveStatusBadge');
-  if (isBlockedApp || isOverLimit || currentDevice.isLocked) {
+  if (!currentDevice.isOnline) {
+    if (liveStatusBadge) {
+      liveStatusBadge.textContent = currentDevice.hasConnected ? '⚪ Desconectado' : '⚪ Sin conectar';
+      liveStatusBadge.style.background = 'rgba(148, 163, 184, 0.15)';
+      liveStatusBadge.style.color = '#94a3b8';
+    }
+    if (simLockOverlay) simLockOverlay.classList.remove('active');
+  } else if (isBlockedApp || isOverLimit || currentDevice.isLocked) {
     if (liveStatusBadge) {
       if (isAppLimitExceeded) {
         liveStatusBadge.textContent = '⌛ Límite App';
@@ -1637,7 +1650,7 @@ function renderFamilyOverviewCards() {
 
     return `
       <div class="child-overview-card ${isSelected ? 'is-active-device' : ''}" id="overviewCard-${dev.id}" onclick="onDeviceSelected('${dev.id}')" style="cursor: pointer; position: relative; transition: all 0.25s ease; ${isSelected ? 'border: 2px solid #818cf8; box-shadow: 0 0 16px rgba(99, 102, 241, 0.35); background: rgba(99, 102, 241, 0.08);' : ''}">
-        ${isSelected ? '<div style="position: absolute; top: -10px; right: 14px; background: #6366f1; color: #fff; font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; box-shadow: 0 2px 8px rgba(99,102,241,0.5); z-index: 2;">👁️ Supervisando ahora</div>' : ''}
+        ${isSelected ? '<div class="badge-supervising-now">👁️ Supervisando ahora</div>' : ''}
         <div class="card-child-header">
           <div class="child-info-group">
             <div class="child-avatar-badge">${dev.avatar || (isTablet ? '📟' : '👦')}</div>
@@ -3546,6 +3559,47 @@ function renderSettingsTab() {
   if (bedtimeStart) bedtimeStart.value = currentDevice.bedtimeStart || '21:30';
   if (bedtimeEnd) bedtimeEnd.value = currentDevice.bedtimeEnd || '07:00';
   if (parentPin) parentPin.value = currentDevice.parentPin || '1234';
+
+  // 7. Módulos de Detección y Supervisión
+  const toggleText = document.getElementById('settingsToggleTextDetection');
+  const toggleTextText = document.getElementById('settingsToggleTextDetectionText');
+  if (toggleText) {
+    toggleText.checked = currentDevice.textMonitoringEnabled !== false;
+    if (toggleTextText) {
+      toggleTextText.textContent = toggleText.checked ? 'Activado' : 'Desactivado';
+      toggleTextText.style.color = toggleText.checked ? '#34d399' : '#f87171';
+    }
+  }
+
+  const toggleScreen = document.getElementById('settingsToggleScreenshotDetection');
+  const toggleScreenText = document.getElementById('settingsToggleScreenshotDetectionText');
+  if (toggleScreen) {
+    toggleScreen.checked = currentDevice.screenshotMonitoringEnabled !== false;
+    if (toggleScreenText) {
+      toggleScreenText.textContent = toggleScreen.checked ? 'Activado' : 'Desactivado';
+      toggleScreenText.style.color = toggleScreen.checked ? '#34d399' : '#f87171';
+    }
+  }
+
+  const toggleVideo = document.getElementById('settingsToggleVideoDetection');
+  const toggleVideoText = document.getElementById('settingsToggleVideoDetectionText');
+  if (toggleVideo) {
+    toggleVideo.checked = currentDevice.videoMonitoringEnabled !== false;
+    if (toggleVideoText) {
+      toggleVideoText.textContent = toggleVideo.checked ? 'Activado' : 'Desactivado';
+      toggleVideoText.style.color = toggleVideo.checked ? '#34d399' : '#f87171';
+    }
+  }
+
+  const toggleAudio = document.getElementById('settingsToggleAudioDetection');
+  const toggleAudioText = document.getElementById('settingsToggleAudioDetectionText');
+  if (toggleAudio) {
+    toggleAudio.checked = currentDevice.audioMonitoringEnabled !== false;
+    if (toggleAudioText) {
+      toggleAudioText.textContent = toggleAudio.checked ? 'Activado' : 'Desactivado';
+      toggleAudioText.style.color = toggleAudio.checked ? '#34d399' : '#f87171';
+    }
+  }
 }
 
 // =========================================================================
@@ -4245,13 +4299,11 @@ function bindEvents() {
   const btnSaveGpsSettings = document.getElementById('btnSaveGpsSettings');
   if (btnSaveGpsSettings) {
     btnSaveGpsSettings.addEventListener('click', async () => {
-      const enabled = document.getElementById('settingsToggleGps')?.checked ?? true;
       const intervalSec = parseInt(document.getElementById('settingsGpsInterval')?.value, 10) || 30;
       if (currentDevice) {
-        currentDevice.gpsTrackingEnabled = enabled;
         currentDevice.gpsIntervalSeconds = intervalSec;
-        await updateRemoteConfig({ gpsTrackingEnabled: enabled, gpsIntervalSeconds: intervalSec });
-        showToast('✅ Configuración de GPS guardada correctamente', 'success');
+        await updateRemoteConfig({ gpsIntervalSeconds: intervalSec });
+        showToast('✅ Frecuencia de actualización GPS guardada correctamente', 'success');
       }
     });
   }
@@ -4359,6 +4411,54 @@ function bindEvents() {
         updateMediaDurationLabels();
         showToast(`✅ Duraciones configuradas: Audio (${audioSec}s), Video (${videoSec}s)`, 'success');
       }
+    });
+  }
+
+  // 7. Guardar Módulos de Detección y Supervisión
+  const bindToggleStatus = (checkboxId, textId) => {
+    const el = document.getElementById(checkboxId);
+    const txt = document.getElementById(textId);
+    if (el && txt) {
+      el.addEventListener('change', () => {
+        txt.textContent = el.checked ? 'Activado' : 'Desactivado';
+        txt.style.color = el.checked ? '#34d399' : '#f87171';
+      });
+    }
+  };
+  bindToggleStatus('settingsToggleGps', 'settingsToggleGpsText');
+  bindToggleStatus('settingsToggleTextDetection', 'settingsToggleTextDetectionText');
+  bindToggleStatus('settingsToggleScreenshotDetection', 'settingsToggleScreenshotDetectionText');
+  bindToggleStatus('settingsToggleVideoDetection', 'settingsToggleVideoDetectionText');
+  bindToggleStatus('settingsToggleAudioDetection', 'settingsToggleAudioDetectionText');
+
+  const btnSaveDetectionSettings = document.getElementById('btnSaveDetectionSettings');
+  if (btnSaveDetectionSettings) {
+    btnSaveDetectionSettings.addEventListener('click', async () => {
+      if (!currentDevice) {
+        showToast('Selecciona un dispositivo para aplicar los cambios', 'warning');
+        return;
+      }
+      const gpsVal = document.getElementById('settingsToggleGps')?.checked ?? true;
+      const textVal = document.getElementById('settingsToggleTextDetection')?.checked ?? true;
+      const screenVal = document.getElementById('settingsToggleScreenshotDetection')?.checked ?? true;
+      const videoVal = document.getElementById('settingsToggleVideoDetection')?.checked ?? true;
+      const audioVal = document.getElementById('settingsToggleAudioDetection')?.checked ?? true;
+
+      currentDevice.gpsTrackingEnabled = gpsVal;
+      currentDevice.textMonitoringEnabled = textVal;
+      currentDevice.screenshotMonitoringEnabled = screenVal;
+      currentDevice.videoMonitoringEnabled = videoVal;
+      currentDevice.audioMonitoringEnabled = audioVal;
+
+      await updateRemoteConfig({
+        gpsTrackingEnabled: gpsVal,
+        textMonitoringEnabled: textVal,
+        screenshotMonitoringEnabled: screenVal,
+        videoMonitoringEnabled: videoVal,
+        audioMonitoringEnabled: audioVal
+      });
+
+      showToast('✅ Módulos de detección actualizados correctamente', 'success');
     });
   }
 
@@ -5409,6 +5509,10 @@ async function requestVideo5s() {
     openPairingQrModal();
     return;
   }
+  if (currentDevice.videoMonitoringEnabled === false) {
+    showToast('⚠️ La supervisión de video está desactivada para este dispositivo en Ajustes.', 'warning');
+    return;
+  }
   const vidSec = currentDevice.videoClipDurationSeconds || 5;
   if (btnCaptureVideoText) btnCaptureVideoText.textContent = `Grabando ${vidSec}s...`;
   if (btnCaptureVideoIcon) btnCaptureVideoIcon.textContent = '⏳';
@@ -5535,6 +5639,14 @@ async function requestAudio5s() {
   if (!currentDevice) {
     showToast('No hay ningún dispositivo vinculado para escuchar.', 'warning');
     openPairingQrModal();
+    return;
+  }
+  if (!currentDevice) {
+    showToast('No hay ningún dispositivo vinculado actualmente.', 'warning');
+    return;
+  }
+  if (currentDevice.audioMonitoringEnabled === false) {
+    showToast('⚠️ La supervisión de audio está desactivada para este dispositivo en Ajustes.', 'warning');
     return;
   }
   if (isAudioRecordingRequested) {
@@ -7705,6 +7817,10 @@ async function requestScreenshotNow() {
   if (!currentDevice) {
     showToast('No hay ningún dispositivo vinculado actualmente.', 'warning');
     openPairingQrModal();
+    return;
+  }
+  if (currentDevice.screenshotMonitoringEnabled === false) {
+    showToast('⚠️ Las capturas de pantalla están desactivadas para este dispositivo en Ajustes.', 'warning');
     return;
   }
   closeVideoClipOverlay();
